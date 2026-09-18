@@ -34,18 +34,57 @@
 <footer><b>Pembrokeshire Self Storage Ltd</b><p>Cartlett Office & Storage Park, Haverfordwest • 01437 723694</p><div class="footlinks"><button onclick="openModal('privacyModal')">Privacy & data protection</button><button onclick="openModal('cookiesModal')">Cookies</button></div><p><small>Private mock-up. Booking, ID verification, contracts, payments, emails, receipts and customer records are demonstrations until the production backend and external services are connected.</small></p></footer>
 
 <script>
-let chosen='';
-const units=document.getElementById('units'),sel=document.getElementById('selection'),book=document.getElementById('bookBtn');
-for(let i=1;i<=10;i++){const id='C'+String(i).padStart(2,'0'),b=document.createElement('button');b.className='unit';b.innerHTML=id+'<small>Available</small>';b.onclick=()=>{chosen=id;document.querySelectorAll('.unit').forEach(x=>x.classList.remove('selected'));b.classList.add('selected');sel.style.display='block';sel.innerHTML='✓ <b>'+id+' selected</b> — this container will be reserved when the booking is completed.';book.disabled=false};units.appendChild(b)}
-book.onclick=()=>showBooking(1);
-function openModal(id){document.getElementById(id).style.display='block'}function closeModal(id){document.getElementById(id).style.display='none'}function demo(t){alert('Demo: '+t)}
-function showBooking(step){openModal('bookingModal');const c=document.getElementById('bookingContent');
-if(step===1)c.innerHTML='<div class="eyebrow">STEP 1 OF 5</div><h2>Create your account</h2><p>Booking <b>'+chosen+'</b> at £156/month including VAT.</p><div class="field"><label>Full name</label><input placeholder="Your full name"></div><div class="field"><label>Email</label><input type="email" placeholder="you@example.com"></div><div class="field"><label>Password</label><input type="password" placeholder="Create a password"></div><button class="btn" onclick="showBooking(2)">Continue to ID check</button>';
-if(step===2)c.innerHTML='<div class="eyebrow">STEP 2 OF 5</div><h2>Verify your identity</h2><p>The live website will hand this step to a specialist identity-verification provider. The mock does not upload or retain identity documents.</p><button class="btn" onclick="showBooking(3)">Run demo ID check ✓</button>';
-if(step===3)c.innerHTML='<div class="eyebrow">STEP 3 OF 5</div><h2>Storage agreement</h2><div class="contract"><b>DRAFT STORAGE TERMS — FOR LEGAL REVIEW BEFORE LIVE USE</b><p>Minimum rental period: one month. The customer must not store food, fuel, oil, flammable or hazardous materials, illegal goods, explosives or perishables.</p><p>The customer is responsible for looking after the unit and may be charged reasonable repair or replacement costs for damage to the container, including its floor, doors, walls, vents or fittings.</p><p>Full commercial terms, notice/cancellation provisions, access, insurance, liability and other legal provisions must be approved before launch.</p></div><div class="field"><label><input type="checkbox" id="agree"> I have read and agree to the storage agreement</label></div><button class="btn" onclick="if(document.getElementById('agree').checked)showBooking(4);else alert('Please tick the agreement box.')">Continue to signature</button>';
-if(step===4)c.innerHTML='<div class="eyebrow">STEP 4 OF 5</div><h2>E-sign agreement</h2><div class="field"><label>Type your full name as your signature</label><input id="sig" placeholder="Full name"></div><p>The production version will create an audit trail and save the signed agreement as a PDF in the customer portal.</p><button class="btn" onclick="if(document.getElementById('sig').value.trim())showBooking(5);else alert('Please enter your name.')">Sign & continue</button>';
-if(step===5)c.innerHTML='<div class="eyebrow">STEP 5 OF 5</div><h2>Set up Direct Debit</h2><p><b>GoCardless</b> will be the online payment method. £156/month including VAT.</p><div class="notice">This is a demonstration only — no bank details are collected and no payment is taken.</div><button class="btn" onclick="showBooking(6)">Demo GoCardless setup</button>';
-if(step===6)c.innerHTML='<div class="eyebrow">BOOKING DEMO COMPLETE</div><h2>✓ '+chosen+' selected</h2><p>In the live system the booking would now be confirmed, the unit allocated, GoCardless mandate stored, signed contract saved and emailed, and the staff dashboard updated.</p><button class="btn" onclick="closeModal(\'bookingModal\')">Finish</button>'}
-const rows=document.getElementById('staffRows');for(let i=1;i<=10;i++){let id='C'+String(i).padStart(2,'0');rows.innerHTML+='<tr><td><b>'+id+'</b></td><td><span class="status available">AVAILABLE</span></td><td>—</td><td>—</td><td>—</td><td><button onclick="demo(\'Staff controls for '+id+' will appear here once booked.\')">Manage</button></td></tr>'}
-window.onclick=e=>{if(e.target.classList.contains('modal'))e.target.style.display='none'}
+var chosen = "";
+function openModal(id) { document.getElementById(id).style.display = "block"; }
+function closeModal(id) { document.getElementById(id).style.display = "none"; }
+function demo(t) { alert("Demo: " + t); }
+
+var units = document.getElementById("units");
+var sel = document.getElementById("selection");
+var book = document.getElementById("bookBtn");
+
+for (var i=1; i<=10; i++) {
+  (function(n){
+    var id = "C" + String(n).padStart(2,"0");
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = "unit";
+    b.innerHTML = id + "<small>Available</small>";
+    b.addEventListener("click", function(){
+      chosen = id;
+      var all = document.querySelectorAll(".unit");
+      for(var j=0;j<all.length;j++) all[j].classList.remove("selected");
+      b.classList.add("selected");
+      sel.style.display = "block";
+      sel.innerHTML = "✓ <b>" + id + " selected</b> — this container will be reserved when the booking is completed.";
+      book.disabled = false;
+    });
+    units.appendChild(b);
+  })(i);
+}
+
+book.addEventListener("click", function(){ showBooking(1); });
+
+function showBooking(step) {
+  openModal("bookingModal");
+  var c = document.getElementById("bookingContent");
+  if(step===1) c.innerHTML = '<div class="eyebrow">STEP 1 OF 5</div><h2>Create your account</h2><p>Booking <b>'+chosen+'</b> at £156/month including VAT.</p><div class="field"><label>Full name</label><input placeholder="Your full name"></div><div class="field"><label>Email</label><input type="email" placeholder="you@example.com"></div><div class="field"><label>Password</label><input type="password" placeholder="Create a password"></div><button class="btn" onclick="showBooking(2)">Continue to ID check</button>';
+  if(step===2) c.innerHTML = '<div class="eyebrow">STEP 2 OF 5</div><h2>Verify your identity</h2><p>The live website will use a specialist identity-verification provider. This mock does not collect identity documents.</p><button class="btn" onclick="showBooking(3)">Run demo ID check ✓</button>';
+  if(step===3) c.innerHTML = '<div class="eyebrow">STEP 3 OF 5</div><h2>Storage agreement</h2><div class="contract"><b>DRAFT STORAGE TERMS — FOR LEGAL REVIEW BEFORE LIVE USE</b><p>Minimum rental period: one month. Do not store food, fuel, oil, flammable or hazardous materials, illegal goods, explosives or perishables.</p><p>Reasonable repair or replacement charges may apply for damage to the container, including its floor, doors, walls, vents or fittings.</p></div><div class="field"><label><input type="checkbox" id="agree"> I have read and agree to the storage agreement</label></div><button class="btn" onclick="agreeNext()">Continue to signature</button>';
+  if(step===4) c.innerHTML = '<div class="eyebrow">STEP 4 OF 5</div><h2>E-sign agreement</h2><div class="field"><label>Type your full name as your signature</label><input id="sig" placeholder="Full name"></div><p>The production version will save the signed agreement and audit trail.</p><button class="btn" onclick="signatureNext()">Sign & continue</button>';
+  if(step===5) c.innerHTML = '<div class="eyebrow">STEP 5 OF 5</div><h2>Set up Direct Debit</h2><p><b>GoCardless</b> will be the online payment method. £156/month including VAT.</p><div class="notice">Demonstration only — no bank details are collected and no payment is taken.</div><button class="btn" onclick="showBooking(6)">Demo GoCardless setup</button>';
+  if(step===6) c.innerHTML = '<div class="eyebrow">BOOKING DEMO COMPLETE</div><h2>✓ '+chosen+' selected</h2><p>The live system would now confirm the booking, allocate the unit, store the payment mandate and signed contract, send the customer confirmation, and update the staff dashboard.</p><button class="btn" onclick="closeModal(&quot;bookingModal&quot;)">Finish</button>';
+}
+function agreeNext(){ if(document.getElementById("agree").checked) showBooking(4); else alert("Please tick the agreement box."); }
+function signatureNext(){ if(document.getElementById("sig").value.trim()) showBooking(5); else alert("Please enter your name."); }
+
+var rows=document.getElementById("staffRows");
+for(var k=1;k<=10;k++){
+  var rid="C"+String(k).padStart(2,"0");
+  var tr=document.createElement("tr");
+  tr.innerHTML="<td><b>"+rid+"</b></td><td><span class='status available'>AVAILABLE</span></td><td>—</td><td>—</td><td>—</td><td><button type='button'>Manage</button></td>";
+  tr.querySelector("button").addEventListener("click",(function(x){return function(){demo("Staff controls for "+x+" will appear here once booked.");};})(rid));
+  rows.appendChild(tr);
+}
+window.addEventListener("click",function(e){if(e.target.classList.contains("modal")) e.target.style.display="none";});
 </script></body></html>
