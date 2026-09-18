@@ -76,13 +76,23 @@ function agreeNext(){ if(document.getElementById("agree").checked) showBooking(4
 function signatureNext(){ if(document.getElementById("sig").value.trim()) showBooking(5); else alert("Please enter your name."); }
 
 var rows=document.getElementById("staffRows");
-for(var k=1;k<=20;k++){
-  var rid="C"+String(k).padStart(2,"0");
-  var occupied=k<=10;
-  var tr=document.createElement("tr");
-  tr.innerHTML="<td><b>"+rid+"</b></td><td><span class='status "+(occupied?"overdue":"available")+"'>"+(occupied?"OCCUPIED":"AVAILABLE")+"</span></td><td>"+(occupied?"Existing customer":"—")+"</td><td>—</td><td>—</td><td><button type='button'>Manage</button></td>";
-  tr.querySelector("button").addEventListener("click",(function(x){return function(){demo("Staff controls for "+x+" will appear here.");};})(rid));
-  rows.appendChild(tr);
+
+async function loadStaffPreview(){
+  rows.innerHTML="<tr><td colspan='6'>Loading live unit status…</td></tr>";
+  const { data, error } = await db.from("assets").select("code,status").like("code","C%").order("code");
+  if(error){
+    rows.innerHTML="<tr><td colspan='6'>Unable to load live unit status.</td></tr>";
+    return;
+  }
+  rows.innerHTML="";
+  data.forEach(function(row){
+    var occupied=row.status==="occupied";
+    var tr=document.createElement("tr");
+    tr.innerHTML="<td><b>"+row.code+"</b></td><td><span class='status "+(occupied?"overdue":"available")+"'>"+(occupied?"OCCUPIED":"AVAILABLE")+"</span></td><td>"+(occupied?"Existing customer":"—")+"</td><td>—</td><td>—</td><td><button type='button'>Manage</button></td>";
+    tr.querySelector("button").addEventListener("click",(function(x){return function(){demo("Staff controls for "+x+" will appear here.");};})(row.code));
+    rows.appendChild(tr);
+  });
 }
+loadStaffPreview();
 window.addEventListener("click",function(e){if(e.target.classList.contains("modal")) e.target.style.display="none";});
 </script></body></html>
