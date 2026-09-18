@@ -13,7 +13,7 @@
 
 <section class="section"><div class="features"><div class="feature"><b>Secure & monitored</b><p>Gated access and CCTV.</p></div><div class="feature"><b>Brand-new units</b><p>Clean 20ft × 8ft containers.</p></div><div class="feature"><b>Extra ventilation</b><p>Additional vents help reduce condensation.</p></div><div class="feature"><b>Local storage</b><p>Conveniently located in Haverfordwest.</p></div></div></section>
 
-<section class="section" id="containers"><div class="grid"><div><div class="eyebrow">OUR CONTAINERS</div><h2>Clean, secure storage space</h2><p>Suitable for household belongings, business stock, tools and equipment.</p><p class="price">£130 + VAT/month<br><span style="font-size:18px">£156 including VAT</span></p><p><b>10 containers available now.</b></p></div><div class="gallery"><img src="container-doors.jpeg" alt="Storage container doors"><img src="container-open.jpeg" alt="Open storage container"><img src="container-interior.jpeg" alt="Inside storage container"><img src="container-yard.jpeg" alt="Storage yard"></div></div></section>
+<section class="section" id="containers"><div class="grid"><div><div class="eyebrow">OUR CONTAINERS</div><h2>Clean, secure storage space</h2><p>Suitable for household belongings, business stock, tools and equipment.</p><p class="price">£130 + VAT/month<br><span style="font-size:18px">£156 including VAT</span></p><p><b>Live availability is shown below.</b></p></div><div class="gallery"><img src="container-doors.jpeg" alt="Storage container doors"><img src="container-open.jpeg" alt="Open storage container"><img src="container-interior.jpeg" alt="Inside storage container"><img src="container-yard.jpeg" alt="Storage yard"></div></div></section>
 
 <section class="section" id="available"><div class="availability"><div class="eyebrow">AVAILABLE NOW</div><h2>Choose your container</h2><p>Select the unit you would like. The production system will sync these with the database so an occupied or reserved unit cannot be booked twice.</p><div class="units" id="units"></div><div class="selection" id="selection"></div><br><button class="btn" id="bookBtn" disabled>Book selected container</button></div></section>
 
@@ -33,7 +33,9 @@
 
 <footer><b>Pembrokeshire Self Storage Ltd</b><p>Cartlett Office & Storage Park, Haverfordwest • 01437 723694</p><div class="footlinks"><button onclick="openModal('privacyModal')">Privacy & data protection</button><button onclick="openModal('cookiesModal')">Cookies</button></div><p><small>Private mock-up. Booking, ID verification, contracts, payments, emails, receipts and customer records are demonstrations until the production backend and external services are connected.</small></p></footer>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+const db = window.supabase.createClient("https://vxurmlmmrlclfydiobgm.supabase.co","sb_publishable_nYgRvuOk0nK1oQfLIaksqA_n0bfFMMg");
 var chosen = "";
 function openModal(id) { document.getElementById(id).style.display = "block"; }
 function closeModal(id) { document.getElementById(id).style.display = "none"; }
@@ -43,25 +45,20 @@ var units = document.getElementById("units");
 var sel = document.getElementById("selection");
 var book = document.getElementById("bookBtn");
 
-for (var i=1; i<=10; i++) {
-  (function(n){
-    var id = "C" + String(n).padStart(2,"0");
-    var b = document.createElement("button");
-    b.type = "button";
-    b.className = "unit";
-    b.innerHTML = id + "<small>Available</small>";
-    b.addEventListener("click", function(){
-      chosen = id;
-      var all = document.querySelectorAll(".unit");
-      for(var j=0;j<all.length;j++) all[j].classList.remove("selected");
-      b.classList.add("selected");
-      sel.style.display = "block";
-      sel.innerHTML = "✓ <b>" + id + " selected</b> — this container will be reserved when the booking is completed.";
-      book.disabled = false;
-    });
+async function loadAvailableUnits(){
+  units.innerHTML = "<p>Checking live availability…</p>";
+  const { data, error } = await db.from("assets").select("code").eq("public_listing",true).eq("status","available").order("code");
+  units.innerHTML = "";
+  if(error){ units.innerHTML="<p>Availability is temporarily unavailable. Please call 01437 723694.</p>"; return; }
+  if(!data.length){ units.innerHTML="<p><b>No containers are currently available.</b> Please call 01437 723694 to join the waiting list.</p>"; return; }
+  data.forEach(function(row){
+    var id=row.code;
+    var b=document.createElement("button"); b.type="button"; b.className="unit"; b.innerHTML=id+"<small>Available</small>";
+    b.addEventListener("click",function(){ chosen=id; document.querySelectorAll(".unit").forEach(x=>x.classList.remove("selected")); b.classList.add("selected"); sel.style.display="block"; sel.innerHTML="✓ <b>"+id+" selected</b> — this container will be reserved when the booking is completed."; book.disabled=false; });
     units.appendChild(b);
-  })(i);
+  });
 }
+loadAvailableUnits();
 
 book.addEventListener("click", function(){ showBooking(1); });
 
