@@ -1,4 +1,5 @@
 import {db,gc,staff,refresh} from './common.js';
+import {version,documentText} from './agreement.js';
 const origin='https://cgrant03.github.io';
 const headers={'Access-Control-Allow-Origin':origin,'Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info','Access-Control-Allow-Methods':'POST,OPTIONS','Content-Type':'application/json'};
 Deno.serve(async req=>{
@@ -6,24 +7,37 @@ Deno.serve(async req=>{
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers});
  if(req.method!=='POST')return reply({error:'Method not allowed'},405);
  try{
+ if(Number(req.headers.get('content-length')||0)>12000)return reply({error:'Request too large'},413);
  const input=await req.json();
- if(['terms','accept_terms'].includes(input.action)){
+ if(['terms','accept_terms','sign_agreement'].includes(input.action)){
  if(!/^[a-f0-9-]{36}$/i.test(input.token||''))return reply({error:'Invalid setup link'},404);
  const c=(await db(`gocardless_connections?setup_token=eq.${input.token}`))[0];
  if(!c?.plan||!c.setup_url||['cancelled','fulfilled'].includes(c.billing_status))return reply({error:'This setup link is closed. Please ask for a new link.'},410);
  if(c.plan.first_date<=new Date().toISOString().slice(0,10))return reply({error:'The proposed first date has passed. Please ask for a new collection date.'},410);
+ const agreement=(await db(`storage_agreements?setup_token=eq.${input.token}`))[0];
+ if(input.action==='sign_agreement'){
+ if(!agreement)return reply({error:'Agreement unavailable; ask us for a new link.'},409);
+ if(agreement.signed_at)return reply({agreement});
+ const name=String(input.signer_name||'').trim(),address=String(input.signer_address||'').trim();
+ if(input.accepted!==true||name.length<2||name.length>150||address.length<5||address.length>500||input.document_hash!==agreement.document_hash)return reply({error:'Read the agreement and enter your full name and address.'},400);
+ const tenant=(await db(`tenancies?id=eq.${c.tenancy_id}&select=start_date`))[0];
+ if(tenant.start_date<=new Date(Date.now()+14*86400000).toISOString().slice(0,10)&&input.early_start!==true)return reply({error:'Please request the early start or contact us to change your start date.'},400);
+ const signed=await db(`storage_agreements?id=eq.${agreement.id}&signed_at=is.null`,'PATCH',{signed_at:new Date().toISOString(),signer_name:name,signer_address:address,early_start:input.early_start===true});
+ return reply({agreement:signed[0]||(await db(`storage_agreements?id=eq.${agreement.id}`))[0]});
+ }
  if(input.action==='accept_terms'){
+ if(agreement&&!agreement.signed_at)return reply({error:'Please sign your storage agreement first.'},409);
  if(input.accepted!==true)return reply({error:'Please confirm the payment terms'},400);
  await db(`gocardless_connections?tenancy_id=eq.${c.tenancy_id}`,'PATCH',{terms_accepted_at:new Date().toISOString()});
  return reply({url:c.setup_url});
  }
- return reply({plan:c.plan});
+ return reply({plan:c.plan,agreement:agreement||null});
  }
  if(!await staff(req))return reply({error:'Staff sign-in required'},403);
  const {action,tenancy_id,plan}=input;
  if(action==='health'){await gc('creditors?limit=1');return reply({connected:true});}
  if(!/^[0-9a-f-]{36}$/i.test(tenancy_id||''))return reply({error:'Invalid tenancy'},400);
- const t=(await db(`tenancies?id=eq.${tenancy_id}&select=id,status`))[0];if(!t)return reply({error:'Tenancy not found'},404);
+ const t=(await db(`tenancies?id=eq.${tenancy_id}&select=id,status,asset_id,customer_id,start_date`))[0];if(!t)return reply({error:'Tenancy not found'},404);
  let c=(await db(`gocardless_connections?tenancy_id=eq.${tenancy_id}`))[0]||{tenancy_id,billing_status:'not_started'};
  if(action==='refresh')return reply({connection:await refresh(c)});
  if(action==='cancel_setup'){
@@ -53,6 +67,17 @@ Deno.serve(async req=>{
  }
  if(!c.plan)return reply({error:'This is an old mandate-only link. Cancel the pending setup below, then create a link with payment terms.'},409);
  if(['cancelled','fulfilled'].includes(c.billing_status))return reply({error:'This setup request is closed. Review it in GoCardless before creating another.'},409);
+ const asset=(await db(`assets?id=eq.${t.asset_id}&select=asset_type,name,location`))[0];
+ if(asset?.asset_type==='container'){
+ let agreement=(await db(`storage_agreements?setup_token=eq.${c.setup_token}`))[0];
+ if(!agreement){
+ if(input.agreement_confirmed!==true)return reply({error:'Check and confirm the container and storage start date before creating the agreement link.'},400);
+ const customer=(await db(`customers?id=eq.${t.customer_id}&select=full_name`))[0];
+ const document=documentText({customer:customer.full_name,container:asset.name,site:asset.location||'Cartlett Office & Storage Park, Haverfordwest',start_date:t.start_date,plan:c.plan});
+ const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(document));
+ await db('storage_agreements','POST',{tenancy_id:t.id,setup_token:c.setup_token,version,document,document_hash:Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('')});
+ }
+ }
  const returnURL=origin+'/Pembrokeshire-self-storage/direct-debit.html';
  const f=await gc('billing_request_flows','POST',{billing_request_flows:{redirect_uri:returnURL,exit_uri:returnURL+'?cancelled=1',links:{billing_request:c.billing_request_id}}});
  c.setup_url=f.billing_request_flows.authorisation_url;c.updated_at=new Date().toISOString();
