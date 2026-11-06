@@ -20,7 +20,7 @@ export async function gc(path,method='GET',body,key){
 }
 export async function refresh(c){
  if(c.billing_request_id){const b=(await gc(`billing_requests/${encodeURIComponent(c.billing_request_id)}`)).billing_requests;
- c={...c,billing_status:b.status,mandate_id:b.links?.mandate_request_mandate||c.mandate_id,customer_id:b.links?.customer||c.customer_id};}
+ c={...c,billing_status:b.status,mandate_id:b.links?.mandate_request_mandate||b.mandate_request?.links?.mandate||c.mandate_id,customer_id:b.links?.customer||c.customer_id};}
  if(c.mandate_id){const m=(await gc(`mandates/${encodeURIComponent(c.mandate_id)}`)).mandates;c.mandate_status=m.status;
  let after='';let pages=0;
  do{const p=await gc(`payments?mandate=${encodeURIComponent(c.mandate_id)}&limit=500${after?'&after='+encodeURIComponent(after):''}`);
