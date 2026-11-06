@@ -1,0 +1,25 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+let handler;globalThis.Deno={env:{get:k=>({SUPABASE_URL:'https://db.test',SUPABASE_SERVICE_ROLE_KEY:'service',SUPABASE_ANON_KEY:'anon',GOCARDLESS_ACCESS_TOKEN:'test-only',GOCARDLESS_WEBHOOK_SECRET:'test-secret'})[k]},serve:h=>handler=h};
+const {validSignature}=await import('../backend/gocardless/common.js');
+await import('../backend/gocardless/manage.js');const manage=handler;
+await import('../backend/gocardless/webhook.js');const webhook=handler;
+const tenancy='00000000-0000-4000-8000-000000000001';
+const reply=x=>new Response(JSON.stringify(x),{headers:{'Content-Type':'application/json'}});
+let calls=[],saved=null,staffOK=true;
+globalThis.fetch=async(url,opts={})=>{calls.push({url,opts});
+ if(url.endsWith('/auth/v1/user'))return reply({id:'user'});
+ if(url.includes('/staff_users?'))return reply(staffOK?[{user_id:'user'}]:[]);
+ if(url.includes('/tenancies?'))return reply([{id:tenancy,status:'active'}]);
+ if(url.includes('/gocardless_connections?')){if(opts.method==='POST'){saved=JSON.parse(opts.body);return reply([saved]);}return reply(saved?[saved]:[]);}
+ if(url.endsWith('/billing_requests')&&opts.method==='POST')return reply({billing_requests:{id:'BRQTEST',status:'pending'}});
+ if(url.endsWith('/billing_requests/BRQTEST'))return reply({billing_requests:{id:'BRQTEST',status:'pending',links:{}}});
+ if(url.endsWith('/billing_request_flows'))return reply({billing_request_flows:{authorisation_url:'https://pay.gocardless.com/billing/static/flow?id=test'}});
+ throw new Error('Unexpected request: '+url);
+};
+const request=(action,auth=true)=>new Request('https://fn.test',{method:'POST',headers:{'Content-Type':'application/json',...(auth?{Authorization:'Bearer test-user'}:{})},body:JSON.stringify({action,tenancy_id:tenancy})});
+test('unauthenticated requests rejected without provider access',async()=>{calls=[];assert.equal((await manage(request('setup',false))).status,403);assert.equal(calls.length,0)});
+test('nonstaff rejected',async()=>{staffOK=false;assert.equal((await manage(request('setup'))).status,403);staffOK=true});
+test('setup only asks for a mandate, never a payment or subscription',async()=>{calls=[];saved=null;const r=await manage(request('setup'));assert.equal(r.status,200);assert.match((await r.json()).url,/pay.gocardless.com/);const b=JSON.parse(calls.find(x=>x.url.endsWith('/billing_requests')).opts.body);assert.deepEqual(Object.keys(b.billing_requests).sort(),['mandate_request','metadata']);assert.equal(calls.some(x=>/\/payments|\/subscriptions/.test(x.url)),false);assert.equal(saved.billing_request_id,'BRQTEST')});
+test('second setup reuses existing billing request',async()=>{calls=[];assert.equal((await manage(request('setup'))).status,200);assert.equal(calls.some(x=>x.url.endsWith('/billing_requests')&&x.opts.method==='POST'),false)});
+test('HMAC accepts original body and rejects altered body',async()=>{const k=await crypto.subtle.importKey('raw',new TextEncoder().encode('test-secret'),{name:'HMAC',hash:'SHA-256'},false,['sign']);const raw='{"events":[]}';const sig=Buffer.from(await crypto.subtle.sign('HMAC',k,new TextEncoder().encode(raw))).toString('hex');assert.equal(await validSignature(raw,sig,'test-secret'),true);assert.equal(await validSignature(raw+' ',sig,'test-secret'),false);assert.equal((await webhook(new Request('https://fn.test',{method:'POST',body:raw,headers:{'Webhook-Signature':sig}}))).status,204)});
+test('unsigned webhook rejected',async()=>{assert.equal((await webhook(new Request('https://fn.test',{method:'POST',body:'{"events":[]}'}))).status,401)});
