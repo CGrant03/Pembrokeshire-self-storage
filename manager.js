@@ -113,15 +113,27 @@ async function reload(){
    if(results[i].status==="fulfilled")state[names[i]==="bank_transactions"?"transactions":names[i]==="bank_connections"?"bankConnections":names[i]]=results[i].value;
    else failures.push(names[i]+": "+readableError(results[i].reason));
   }
+  state.assets.sort(compareAssets);
   renderAssets();renderManager();renderBanks();
   if(failures.length)status("Some records could not load: "+failures.join(" | "));
   else status("Records loaded. Changes can be made using the controls below.");
  })().finally(()=>{state.loading=null});
  return state.loading;
 }
+const portfolioOrder=['Houses','Units & flower shop','Garages','Containers'];
+const groupRank=g=>{const n=portfolioOrder.indexOf(g);return n<0?99:n;};
+function compareAssets(a,b){
+ if(!a||!b)return a?-1:b?1:0;
+ const group=groupRank(a.portfolio_group)-groupRank(b.portfolio_group);
+ if(group)return group;
+ if(a.asset_type==='container'&&b.asset_type==='container')return Number(a.code.slice(1))-Number(b.code.slice(1));
+ const aFlower=a.code==='PRENDERGAST-FLOWERS',bFlower=b.code==='PRENDERGAST-FLOWERS';
+ if(aFlower!==bFlower)return aFlower?1:-1;
+ return a.name.localeCompare(b.name,'en-GB',{numeric:true});
+}
 function renderAssets(){
  if(!byId("assetRows"))return;
- const groups=[...new Set(state.assets.map(a=>a.portfolio_group).filter(Boolean))].sort();
+ const groups=[...new Set(state.assets.map(a=>a.portfolio_group).filter(Boolean))].sort((a,b)=>groupRank(a)-groupRank(b)||a.localeCompare(b));
  const groupSelect=byId("assetGroupFilter");
  if(groupSelect){
   const selected=groupSelect.value;
@@ -132,10 +144,13 @@ function renderAssets(){
  const group=groupSelect?.value||"";
  const rows=state.assets.filter(a=>(!group||group===a.portfolio_group)&&(!term||(a.code+" "+a.name+" "+a.portfolio_group).toLowerCase().includes(term)));
  const body=byId("assetRows");
+ let previousGroup=null;
  body.innerHTML=rows.map(a=>{
+  const heading=a.portfolio_group!==previousGroup?'<tr><th colspan="8" style="background:#e7eef2;padding:14px 9px;font-size:17px">'+esc(a.portfolio_group||"Other")+'</th></tr>':'';
+  previousGroup=a.portfolio_group;
   const tenancy=getActiveTenancy(a.id);
   const tenant=tenancy?nameForCustomer(tenancy.customer_id):"Not linked";
-  return '<tr><td><b>'+esc(a.code)+'</b><br><small>'+esc(a.name)+'</small></td><td>'+esc(a.portfolio_group||"—")+'</td>'+
+  return heading+'<tr><td><b>'+esc(a.name)+'</b></td><td>'+esc(a.portfolio_group||"—")+'</td>'+
   '<td>'+esc(a.status)+'</td><td>'+money(a.monthly_rent_pence)+(a.billing_frequency==="weekly"?"/week":a.billing_frequency==="none"?"":"/month")+'</td>'+
   '<td>'+esc(a.expected_bank_account||"—")+'</td><td>'+esc(a.manual_paid_until||"Not set")+'</td>'+
   '<td>'+esc(a.public_listing?"Yes":"No")+'</td>'+
@@ -190,7 +205,7 @@ function renderManager(){
  renderTenancies();renderReceipts();renderBankReview();
 }
 function renderTenancies(){
- const tenancies=state.tenancies;
+ const tenancies=[...state.tenancies].sort((a,b)=>compareAssets(assetFor(a.asset_id),assetFor(b.asset_id)));
  byId("tenancyList").innerHTML=!tenancies.length?'<p class="mg-help">No tenants linked to assets yet. Add customers and assign a tenancy above.</p>':
  '<table class="mg-table"><thead><tr><th>Asset</th><th>Tenant</th><th>Status</th><th>Rent</th><th></th></tr></thead><tbody>'+
  tenancies.map(t=>'<tr><td>'+esc(nameForAsset(t.asset_id))+'</td><td>'+esc(nameForCustomer(t.customer_id))+'</td>'+
