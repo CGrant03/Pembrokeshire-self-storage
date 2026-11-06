@@ -104,6 +104,7 @@ async function reload(){
  if(state.loading)return state.loading;
  state.loading=(async()=>{
   initUI();
+  await loadEnquiries();
   window.initBankCSV();
   status("Loading rental and bank records…");
   const names=["assets","customers","tenancies","payments","bank_connections","bank_transactions"];
@@ -333,6 +334,19 @@ async function syncBank(id,btn){
   await reload();status("Bank sync complete. "+data.processed+" transactions processed; review unmatched incoming payments below.");
  }catch(e){status("Bank sync unsuccessful: "+readableError(e))}
  finally{btn.disabled=false}
+}
+async function loadEnquiries(){
+ let box=byId('enquiryPanel');if(!box){box=document.createElement('section');box.id='enquiryPanel';box.className='card';byId('managerPanel').prepend(box);}
+ box.innerHTML='<h2>New enquiries</h2><p>Loading enquiries…</p>';
+ const {data,error}=await db.from('storage_enquiries').select('*').order('created_at',{ascending:false}).limit(200);
+ if(error){box.innerHTML='<h2>New enquiries</h2><p>Enquiries could not load. Use Refresh records to retry.</p>';return;}
+ box.innerHTML='<h2>New enquiries</h2><p>Review details, confirm the unit and rent, then create their tenancy and personal GoCardless link. No payment is started by an enquiry.</p>'+(data.length?'':'<p>No enquiries yet.</p>');
+ for(const row of data){const card=document.createElement('div');card.className='mg-edit';
+ card.innerHTML='<h3>'+esc(row.full_name)+'</h3><p>'+esc(row.contact)+'</p><p>Preferred start: '+esc(row.preferred_date||'To discuss')+' · Received '+esc(new Date(row.created_at).toLocaleDateString('en-GB'))+'</p><p style="white-space:pre-wrap">'+esc(row.requirements)+'</p>';
+ const label=document.createElement('label');label.textContent='Status ';const select=document.createElement('select');select.setAttribute('aria-label','Enquiry status for '+row.full_name);
+ for(const value of ['new','contacted','closed']){const o=document.createElement('option');o.value=value;o.textContent=value;o.selected=row.status===value;select.append(o);}
+ select.onchange=async()=>{const previous=row.status;select.disabled=true;const {error}=await db.from('storage_enquiries').update({status:select.value}).eq('id',row.id);if(error){select.value=previous;status('Could not update enquiry.');}else row.status=select.value;select.disabled=false;};label.append(select);card.append(label);
+ const btn=document.createElement('button');btn.className='btn';btn.type='button';btn.textContent='Use details for customer';btn.onclick=()=>{byId('customerName').value=row.full_name;byId('customerEmail').value=row.contact.includes('@')?row.contact:'';byId('customerPhone').value=row.contact.includes('@')?'':row.contact;byId('addCustomerForm').scrollIntoView({behavior:'smooth'});status('Details copied below. Check for an existing customer before saving, then assign a tenancy and arrange their payment link.');};card.append(btn);box.append(card);}
 }
 window.rentalManagerLoad=reload;
 window.rentalManagerState=()=>({assets:state.assets.length,customers:state.customers.length,tenancies:state.tenancies.length,transactions:state.transactions.length});
