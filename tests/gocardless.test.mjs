@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 let handler;globalThis.Deno={env:{get:k=>({SUPABASE_URL:'https://db.test',SUPABASE_SERVICE_ROLE_KEY:'service',SUPABASE_ANON_KEY:'anon',GOCARDLESS_ACCESS_TOKEN:'test-only',GOCARDLESS_WEBHOOK_SECRET:'test-secret'})[k]},serve:h=>handler=h};
-const {validSignature}=await import('../backend/gocardless/common.js');
+const {validSignature,refresh}=await import('../backend/gocardless/common.js');
 await import('../backend/gocardless/manage.js');const manage=handler;
 await import('../backend/gocardless/webhook.js');const webhook=handler;
 const tenancy='00000000-0000-4000-8000-000000000001';
@@ -23,3 +23,5 @@ test('setup only asks for a mandate, never a payment or subscription',async()=>{
 test('second setup reuses existing billing request',async()=>{calls=[];assert.equal((await manage(request('setup'))).status,200);assert.equal(calls.some(x=>x.url.endsWith('/billing_requests')&&x.opts.method==='POST'),false)});
 test('HMAC accepts original body and rejects altered body',async()=>{const k=await crypto.subtle.importKey('raw',new TextEncoder().encode('test-secret'),{name:'HMAC',hash:'SHA-256'},false,['sign']);const raw='{"events":[]}';const sig=Buffer.from(await crypto.subtle.sign('HMAC',k,new TextEncoder().encode(raw))).toString('hex');assert.equal(await validSignature(raw,sig,'test-secret'),true);assert.equal(await validSignature(raw+' ',sig,'test-secret'),false);assert.equal((await webhook(new Request('https://fn.test',{method:'POST',body:raw,headers:{'Webhook-Signature':sig}}))).status,204)});
 test('unsigned webhook rejected',async()=>{assert.equal((await webhook(new Request('https://fn.test',{method:'POST',body:'{"events":[]}'}))).status,401)});
+
+test('canonical payment state upserts one payment on repeated refresh',async()=>{const previous=globalThis.fetch;const ledger=new Map();globalThis.fetch=async(url,opts={})=>{if(url.includes('/mandates/MDTEST'))return reply({mandates:{status:'active'}});if(url.includes('/payments?'))return reply({payments:[{id:'PMTEST',amount:15600,currency:'GBP',status:'failed',charge_date:'2026-11-10'}],meta:{cursors:{after:null}}});if(url.includes('/gocardless_payment_status?')){const p=JSON.parse(opts.body);ledger.set(p.payment_id,p);return reply([p]);}if(url.includes('/gocardless_connections?'))return reply([JSON.parse(opts.body)]);throw new Error(url)};try{await refresh({tenancy_id:tenancy,mandate_id:'MDTEST'});await refresh({tenancy_id:tenancy,mandate_id:'MDTEST'});assert.equal(ledger.size,1);assert.equal(ledger.get('PMTEST').status,'failed');}finally{globalThis.fetch=previous;}});
