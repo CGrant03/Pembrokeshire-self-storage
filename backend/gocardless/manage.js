@@ -37,6 +37,7 @@ Deno.serve(async req=>{
  if(action!=='setup')return reply({error:'Unknown action'},400);
  if(!['active','pending'].includes(t.status))return reply({error:'Only active tenancies can be set up'},409);
  if(c.billing_request_id)c=await refresh(c);
+ const previousRequest=c.billing_status==='cancelled'?c.billing_request_id:'initial';
  if(c.billing_status==='cancelled')c={tenancy_id,billing_status:'not_started',billing_request_id:null,mandate_id:null,mandate_status:null,customer_id:null,setup_url:null,plan:null,setup_token:null,terms_accepted_at:null};
  if(c.mandate_id)return reply({connection:c,message:'A mandate is already linked. Check its status before arranging payments.'});
  if(!c.billing_request_id){
@@ -45,7 +46,7 @@ Deno.serve(async req=>{
  c.setup_token=crypto.randomUUID();c.terms_accepted_at=null;
  // Terms are fixed for this request; a replacement requires cancelling the old request first.
  // No amount or subscription: this authorises a mandate only; it never collects money.
- let b=await gc('billing_requests','POST',{billing_requests:{mandate_request:{scheme:'bacs'},metadata:{tenancy_id}}},'tenancy-mandate-v2-'+tenancy_id+'-'+plan.first_date+'-'+plan.amount_pence);
+ let b=await gc('billing_requests','POST',{billing_requests:{mandate_request:{scheme:'bacs'},metadata:{tenancy_id}}},'tenancy-mandate-v2-'+tenancy_id+'-'+plan.first_date+'-'+plan.amount_pence+'-'+previousRequest);
  if(b.conflict)b=await gc('billing_requests/'+encodeURIComponent(b.conflict));
  c.billing_request_id=b.billing_requests.id;c.billing_status=b.billing_requests.status;
  await db('gocardless_connections?on_conflict=tenancy_id','POST',c);
