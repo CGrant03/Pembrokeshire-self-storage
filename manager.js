@@ -120,7 +120,7 @@ async function reload(){
  })().finally(()=>{state.loading=null});
  return state.loading;
 }
-const portfolioOrder=['Houses','Units & flower shop','Garages','Containers'];
+const portfolioOrder=['Houses','Commercial units','Flower shop','Garages','Containers'];
 const groupRank=g=>{const n=portfolioOrder.indexOf(g);return n<0?99:n;};
 function compareAssets(a,b){
  if(!a||!b)return a?-1:b?1:0;
