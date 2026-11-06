@@ -225,13 +225,13 @@ function renderBankReview(){
  const pending=state.transactions.filter(tx=>Number(tx.amount_pence)>0&&!matched.has(tx.id));
  byId("needsMatching").textContent=pending.length;
  const activeTen=state.tenancies.filter(active);
- if(!pending.length){byId("bankReview").innerHTML='<p class="mg-help">No unmatched incoming bank transactions currently loaded. Import a bank CSV above, or connect and sync a bank feed.</p>';return}
- byId("bankReview").innerHTML='<table class="mg-table"><thead><tr><th>Date</th><th>Sender / reference</th><th>Amount</th><th>Match to</th><th></th></tr></thead><tbody>'+
+ if(!pending.length){byId("bankReview").innerHTML='<p class="mg-help">No unmatched incoming bank transactions currently loaded. Import a bank CSV or NatWest PDF above, or connect and sync a bank feed.</p>';return}
+ byId("bankReview").innerHTML=(!activeTen.length?'<p class="mg-warn">No tenancies have been set up yet. <a href="#addCustomerForm">Add a tenant / customer</a>, then <a href="#addTenancyForm">set up their tenancy</a> to match payments. Your imported transactions are saved.</p>':'')+'<table class="mg-table"><thead><tr><th>Date</th><th>Sender / reference</th><th>Amount</th><th>Match to</th><th></th></tr></thead><tbody>'+
  pending.map(tx=>
- '<tr><td>'+esc((tx.booked_at||"").slice(0,10))+'</td><td>'+esc(tx.counterparty_name||"—")+' <small class="mg-tag">'+esc(tx.provider==="csv"?"CSV · "+(tx.bank_account_ref||""):"Bank feed")+'</small>'+'<br><small>'+esc(tx.reference||"")+'</small></td>'+
- '<td>'+money(tx.amount_pence)+'</td><td><select id="match-'+esc(tx.id)+'" style="min-width:160px"><option value="">Choose tenancy</option>'+
+ '<tr><td>'+esc((tx.booked_at||"").slice(0,10))+'</td><td>'+esc(tx.counterparty_name||"—")+' <small class="mg-tag">'+esc(tx.provider==="csv"?"Statement · "+(tx.bank_account_ref||""):"Bank feed")+'</small>'+'<br><small>'+esc(tx.reference||"")+'</small></td>'+
+ '<td>'+money(tx.amount_pence)+'</td><td><select id="match-'+esc(tx.id)+'" style="min-width:160px"'+(!activeTen.length?' disabled':'')+'><option value="">'+(!activeTen.length?'Set up a tenancy first':'Choose tenancy')+'</option>'+
  activeTen.map(t=>'<option value="'+esc(t.id)+'">'+esc(nameForAsset(t.asset_id)+" / "+nameForCustomer(t.customer_id))+'</option>').join("")+'</select></td>'+
- '<td><button class="btn btn2 mg-compact" type="button" data-action="matchPayment" data-id="'+esc(tx.id)+'">Confirm match</button></td></tr>'
+ '<td><button class="btn btn2 mg-compact" type="button" data-action="matchPayment" data-id="'+esc(tx.id)+'"'+(!activeTen.length?' disabled':'')+'>Confirm match</button></td></tr>'
  ).join("")+'</tbody></table>';
 }
 function setSuggestedRent(){
@@ -301,7 +301,7 @@ async function matchBankPayment(txid,btn){
   const {data:session}=await db.auth.getSession();
   const {error}=await db.from("payments").insert({tenancy_id:t.id,customer_id:t.customer_id,amount_pence:tx.amount_pence,
    method:tx.provider==="csv"?"bank_transfer":"open_banking",status:"confirmed",bank_transaction_id:tx.id,received_at:tx.booked_at||new Date().toISOString(),
-   created_by:session?.session?.user?.id||null,notes:tx.provider==="csv"?"Manually matched CSV bank credit":"Manually matched bank credit"});
+   created_by:session?.session?.user?.id||null,notes:tx.provider==="csv"?"Manually matched statement bank credit":"Manually matched bank credit"});
   if(error)throw error;await reload();status("Bank credit matched to "+nameForCustomer(t.customer_id)+".");
  }catch(e){status("Bank payment could not be matched: "+readableError(e))}
  finally{btn.disabled=false}
