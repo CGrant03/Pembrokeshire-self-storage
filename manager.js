@@ -88,10 +88,14 @@ async function query(name,columns="*"){
  let q=db.from(name).select(columns);
  if(name==="assets")q=q.order("code");
  if(name==="bank_connections")q=q.order("institution_name");
- if(name==="bank_transactions")q=q.order("booked_at",{ascending:false}).limit(250);
- if(name==="payments")q=q.order("received_at",{ascending:false}).limit(250);
+ if(name==="bank_transactions")q=q.order("booked_at",{ascending:false}).order("id");
+ if(name==="payments")q=q.order("received_at",{ascending:false}).order("id");
  if(name==="tenancies")q=q.order("created_at",{ascending:false});
  if(name==="customers")q=q.order("full_name");
+ if(name==="bank_transactions"||name==="payments"){
+  const all=[];
+  for(let start=0;;start+=1000){const {data,error}=await q.range(start,start+999);if(error)throw new Error(name+": "+error.message);all.push(...(data||[]));if(!data||data.length<1000)return all;}
+ }
  const {data,error}=await q;
  if(error)throw new Error(name+": "+error.message);
  return data||[];
@@ -100,6 +104,7 @@ async function reload(){
  if(state.loading)return state.loading;
  state.loading=(async()=>{
   initUI();
+  window.initBankCSV();
   status("Loading rental and bank records…");
   const names=["assets","customers","tenancies","payments","bank_connections","bank_transactions"];
   const results=await Promise.allSettled(names.map(n=>query(n)));
@@ -220,10 +225,10 @@ function renderBankReview(){
  const pending=state.transactions.filter(tx=>Number(tx.amount_pence)>0&&!matched.has(tx.id));
  byId("needsMatching").textContent=pending.length;
  const activeTen=state.tenancies.filter(active);
- if(!pending.length){byId("bankReview").innerHTML='<p class="mg-help">No unmatched incoming bank transactions currently loaded. Bank feeds must be connected and synced first.</p>';return}
+ if(!pending.length){byId("bankReview").innerHTML='<p class="mg-help">No unmatched incoming bank transactions currently loaded. Import a bank CSV above, or connect and sync a bank feed.</p>';return}
  byId("bankReview").innerHTML='<table class="mg-table"><thead><tr><th>Date</th><th>Sender / reference</th><th>Amount</th><th>Match to</th><th></th></tr></thead><tbody>'+
  pending.map(tx=>
- '<tr><td>'+esc((tx.booked_at||"").slice(0,10))+'</td><td>'+esc(tx.counterparty_name||"—")+'<br><small>'+esc(tx.reference||"")+'</small></td>'+
+ '<tr><td>'+esc((tx.booked_at||"").slice(0,10))+'</td><td>'+esc(tx.counterparty_name||"—")+' <small class="mg-tag">'+esc(tx.provider==="csv"?"CSV · "+(tx.bank_account_ref||""):"Bank feed")+'</small>'+'<br><small>'+esc(tx.reference||"")+'</small></td>'+
  '<td>'+money(tx.amount_pence)+'</td><td><select id="match-'+esc(tx.id)+'" style="min-width:160px"><option value="">Choose tenancy</option>'+
  activeTen.map(t=>'<option value="'+esc(t.id)+'">'+esc(nameForAsset(t.asset_id)+" / "+nameForCustomer(t.customer_id))+'</option>').join("")+'</select></td>'+
  '<td><button class="btn btn2 mg-compact" type="button" data-action="matchPayment" data-id="'+esc(tx.id)+'">Confirm match</button></td></tr>'
@@ -290,13 +295,13 @@ async function matchBankPayment(txid,btn){
  const t=state.tenancies.find(x=>x.id===select?.value);
  if(!tx||!t||Number(tx.amount_pence)<=0){status("Select the correct tenancy for this incoming bank payment.");return}
  if(state.payments.some(p=>p.bank_transaction_id===txid)){status("That bank credit is already matched.");return}
- if(!window.confirm("Match "+money(tx.amount_pence)+" from "+(tx.counterparty_name||"the bank")+" to "+nameForCustomer(t.customer_id)+"? No further payment will be taken."))return;
+ if(!window.confirm("Match "+money(tx.amount_pence)+" from "+(tx.counterparty_name||"the bank")+" to "+nameForCustomer(t.customer_id)+"? Check this has not already been recorded manually or from another import/feed. No further payment will be taken."))return;
  btn.disabled=true;
  try{
   const {data:session}=await db.auth.getSession();
   const {error}=await db.from("payments").insert({tenancy_id:t.id,customer_id:t.customer_id,amount_pence:tx.amount_pence,
-   method:"open_banking",status:"confirmed",bank_transaction_id:tx.id,received_at:tx.booked_at||new Date().toISOString(),
-   created_by:session?.session?.user?.id||null,notes:"Manually matched bank credit"});
+   method:tx.provider==="csv"?"bank_transfer":"open_banking",status:"confirmed",bank_transaction_id:tx.id,received_at:tx.booked_at||new Date().toISOString(),
+   created_by:session?.session?.user?.id||null,notes:tx.provider==="csv"?"Manually matched CSV bank credit":"Manually matched bank credit"});
   if(error)throw error;await reload();status("Bank credit matched to "+nameForCustomer(t.customer_id)+".");
  }catch(e){status("Bank payment could not be matched: "+readableError(e))}
  finally{btn.disabled=false}
