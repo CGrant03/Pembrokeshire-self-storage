@@ -25,3 +25,6 @@ alter table public.storage_access_deliveries enable row level security;
 revoke all on public.storage_access_deliveries from public,anon,authenticated;
 grant all on public.storage_access_deliveries to service_role;
 -- Actual access codes are configured privately, never checked into the public repository.
+
+-- Only privileged operators may request an explicit resend.
+alter table public.storage_access_deliveries add column if not exists resend_request_id uuid, add column if not exists delivery_history jsonb not null default '[]'::jsonb;
