@@ -101,6 +101,7 @@ Deno.serve(async req=>{
  c.billing_request_id=b.billing_requests.id;c.billing_status=b.billing_requests.status;
  await db('gocardless_connections?on_conflict=tenancy_id','POST',c);
  }
+ if(c.plan?.mode===UPFRONT_MODE)await db(`tenancies?id=eq.${tenancy_id}`,'PATCH',{payment_day:c.plan.day});
  if(!c.plan)return reply({error:'This is an old mandate-only link. Cancel the pending setup below, then create a link with payment terms.'},409);
  if(['cancelled','fulfilled'].includes(c.billing_status))return reply({error:'This setup request is closed. Review it in GoCardless before creating another.'},409);
  const asset=(await db(`assets?id=eq.${t.asset_id}&select=asset_type,name,location`))[0];
