@@ -10,10 +10,12 @@ Deno.serve(async req=>{
  // Fetch canonical current state, so redelivery and older events cannot roll status backwards.
  let cs=[];
  if(event.links?.billing_request)cs=await db(`gocardless_connections?billing_request_id=eq.${encodeURIComponent(event.links.billing_request)}`);
+ else if(event.links?.subscription)cs=await db(`gocardless_connections?subscription_id=eq.${encodeURIComponent(event.links.subscription)}`);
  else if(event.links?.mandate)cs=await db(`gocardless_connections?mandate_id=eq.${encodeURIComponent(event.links.mandate)}`);
- else if(event.resource_type==='payments'&&event.links?.payment){
+ else if(event.links?.payment){
  const {gc}=await import('./common.js');const p=(await gc('payments/'+encodeURIComponent(event.links.payment))).payments;
- if(p.links?.mandate)cs=await db(`gocardless_connections?mandate_id=eq.${encodeURIComponent(p.links.mandate)}`);
+ cs=await db(`gocardless_connections?first_payment_id=eq.${encodeURIComponent(p.id)}`);
+ if(!cs.length&&p.links?.mandate)cs=await db(`gocardless_connections?mandate_id=eq.${encodeURIComponent(p.links.mandate)}`);
  }
  for(const c of cs)await refresh(c);
  }

@@ -1,4 +1,4 @@
-export const version='2026-11-06-v1';
+export const version='2026-11-07-v2';
 export const conditions=`STORAGE AGREEMENT
 Miles John Williams Limited trading as Pembrokeshire Self Storage
 86 Jury Lane, Haverfordwest, SA61 1BY
@@ -34,4 +34,8 @@ Optional cancellation wording: I cancel my storage agreement for [container], ag
 
 10. Records and complaints
 Keep your contact details up to date. We use details to administer storage, agreements, payments and enquiries as explained in our privacy notice. Contact us with complaints so we can investigate. The law of England and Wales applies without removing mandatory consumer rights or rights concerning where a claim can be brought. A downloadable copy of the signed agreement is provided for you to keep.`;
-export function documentText(d){return `${conditions}\n\nAGREEMENT DETAILS\nCustomer: ${d.customer}\nContainer: ${d.container}\nSite: ${d.site}\nStorage start: ${d.start_date}\nMonthly total including VAT: £${(d.plan.amount_pence/100).toFixed(2)}\nProposed first collection: ${d.plan.first_date}\nRegular collection day: ${d.plan.day}\nVersion: ${version}`;}
+export function documentText(d){
+ const upfront=d.plan.mode==='upfront_monthly_v1';
+ const terms=upfront?conditions.replace('Signing does not itself authorise a Direct Debit. Bank authorisation is completed separately through GoCardless, and the collection schedule must be confirmed before collection.','The first month is paid upfront by Pay by Bank through GoCardless. This covers storage from the storage start date until the first monthly Direct Debit date (exclusive). Signing alone does not take payment. On the following payment page you authorise the upfront payment and set up a Direct Debit. By accepting the payment schedule you authorise recurring monthly rent from the date shown below. GoCardless will send payment notifications. Access is confirmed by our team after payment is confirmed.'):conditions;
+ return `${terms}\n\nAGREEMENT DETAILS\nCustomer: ${d.customer}\nContainer: ${d.container}\nSite: ${d.site}\nStorage start: ${d.start_date}\nMonthly total including VAT: £${(d.plan.amount_pence/100).toFixed(2)}\n${upfront?'First month payable now: £'+(d.plan.amount_pence/100).toFixed(2)+' including VAT\nFirst monthly Direct Debit (month two)':'Proposed first collection'}: ${d.plan.first_date}\nRegular collection day: ${d.plan.day} (last day in shorter months; non-working days move to the next working day)\nVersion: ${version}`;
+}

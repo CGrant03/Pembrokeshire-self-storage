@@ -1,22 +1,28 @@
+import {UPFRONT_MODE,nextMonth} from './billing.js';
 import {db,gc,staff,refresh} from './common.js';
 import {version,documentText} from './agreement.js';
 import {invitation} from './invitation.js';
 const site='https://www.pembrokeshireselfstorage.co.uk';
 const allowedOrigins=new Set([site,'https://pembrokeshireselfstorage.co.uk','https://cgrant03.github.io']);
-const baseHeaders={'Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info','Access-Control-Allow-Methods':'POST,OPTIONS','Content-Type':'application/json'};
+let optionsCache=null,optionsUntil=0;
+const baseHeaders={'Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Content-Type':'application/json'};
 Deno.serve(async req=>{
  const origin=req.headers.get('origin');
  const headers={...baseHeaders,Vary:'Origin',...(allowedOrigins.has(origin)?{'Access-Control-Allow-Origin':origin}:{})};
  if(origin&&!allowedOrigins.has(origin))return new Response('Origin not allowed',{status:403});
  const reply=(data,status=200)=>new Response(JSON.stringify(data),{status,headers});
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers});
+ if(req.method==='GET'){
+ try{if(!optionsCache||Date.now()>optionsUntil){const result=await gc('creditors?limit=2');const schemes=result.creditors?.length===1?result.creditors[0].scheme_identifiers||[]:[];optionsCache={pay_by_bank:schemes.some(s=>s.scheme==='faster_payments'&&s.status==='active'),direct_debit:schemes.some(s=>s.scheme==='bacs'&&s.status==='active')};optionsUntil=Date.now()+60000;}return reply(optionsCache);}catch{return reply({error:'Payment options unavailable'},503);}
+ }
  if(req.method!=='POST')return reply({error:'Method not allowed'},405);
  try{
  if(Number(req.headers.get('content-length')||0)>12000)return reply({error:'Request too large'},413);
  const input=await req.json();
- if(['terms','accept_terms','sign_agreement'].includes(input.action)){
+ if(['terms','accept_terms','sign_agreement','payment_status'].includes(input.action)){
  if(!/^[a-f0-9-]{36}$/i.test(input.token||''))return reply({error:'Invalid setup link'},404);
  const c=(await db(`gocardless_connections?setup_token=eq.${input.token}`))[0];
+ if(input.action==='payment_status'){if(!c?.plan)return reply({error:'Setup not found'},404);return reply({upfront:c.plan.mode===UPFRONT_MODE,first_payment_status:c.first_payment_status||'pending',mandate_status:c.mandate_status||'pending',subscription_status:c.subscription_status||'pending',needs_attention:!!c.billing_error});}
  if(!c?.plan||!c.setup_url||['cancelled','fulfilled'].includes(c.billing_status))return reply({error:'This setup link is closed. Please ask for a new link.'},410);
  if(c.plan.first_date<=new Date().toISOString().slice(0,10))return reply({error:'The proposed first date has passed. Please ask for a new collection date.'},410);
  const agreement=(await db(`storage_agreements?setup_token=eq.${input.token}`))[0];
@@ -63,24 +69,34 @@ Deno.serve(async req=>{
  if(action==='cancel_setup'){
  if(!c.billing_request_id)return reply({message:'No setup to cancel.'});
  c=await refresh(c);
- if(c.mandate_id||c.billing_status==='fulfilled')return reply({error:'A mandate exists. Cancel it in GoCardless before replacing this setup.'},409);
+ if(c.first_payment_id||c.mandate_id||c.billing_status==='fulfilled')return reply({error:'A mandate exists. Cancel it in GoCardless before replacing this setup.'},409);
  if(c.billing_status!=='cancelled')await gc('billing_requests/'+encodeURIComponent(c.billing_request_id)+'/actions/cancel','POST',{});
- await db(`gocardless_connections?tenancy_id=eq.${tenancy_id}`,'PATCH',{billing_status:'cancelled',setup_url:null,setup_token:null,terms_accepted_at:null,plan:null});
+ await db(`gocardless_connections?tenancy_id=eq.${tenancy_id}`,'PATCH',{billing_status:'cancelled',setup_url:null,setup_token:null,terms_accepted_at:null,plan:null,first_payment_id:null,first_payment_status:null,subscription_id:null,subscription_status:null,billing_error:null});
  return reply({message:'Pending setup cancelled. Its old link has expired.'});
  }
  if(action!=='setup')return reply({error:'Unknown action'},400);
  if(!['active','pending'].includes(t.status))return reply({error:'Only active tenancies can be set up'},409);
  if(c.billing_request_id)c=await refresh(c);
+ if(c.first_payment_id&&c.billing_status==='cancelled')return reply({error:'An upfront payment exists. Review it before creating a replacement.'},409);
  const previousRequest=c.billing_status==='cancelled'?c.billing_request_id:'initial';
  if(c.billing_status==='cancelled')c={tenancy_id,billing_status:'not_started',billing_request_id:null,mandate_id:null,mandate_status:null,customer_id:null,setup_url:null,plan:null,setup_token:null,terms_accepted_at:null};
  if(c.mandate_id)return reply({connection:c,message:'A mandate is already linked. Check its status before arranging payments.'});
  if(!c.billing_request_id){
- if(!plan||!Number.isSafeInteger(plan.amount_pence)||plan.amount_pence<1||plan.amount_pence>1000000||!/^\d{4}-\d{2}-\d{2}$/.test(plan.first_date||'')||!Number.isInteger(plan.day)||plan.day<1||plan.day>28||new Date(plan.first_date+'T12:00:00Z').toISOString().slice(0,10)!==plan.first_date||plan.first_date<=new Date(Date.now()+7*86400000).toISOString().slice(0,10)||Number(plan.first_date.slice(-2))!==plan.day)return reply({error:'Enter the total monthly amount and a valid first date at least 8 days ahead, on your regular collection day (1–28).'},400);
- c.plan={amount_pence:plan.amount_pence,first_date:plan.first_date,day:plan.day,currency:'GBP',frequency:'monthly'};
+ const upfront=plan?.mode===UPFRONT_MODE;
+ const maxDay=upfront?31:28;
+ if(!plan||!Number.isSafeInteger(plan.amount_pence)||plan.amount_pence<1||plan.amount_pence>1000000||!/^\d{4}-\d{2}-\d{2}$/.test(plan.first_date||'')||!Number.isInteger(plan.day)||plan.day<1||plan.day>maxDay||new Date(plan.first_date+'T12:00:00Z').toISOString().slice(0,10)!==plan.first_date||plan.first_date<=new Date(Date.now()+7*86400000).toISOString().slice(0,10))return reply({error:'Enter a valid monthly amount and collection date at least 8 days ahead.'},400);
+ if(upfront){
+ if(t.start_date<new Date().toISOString().slice(0,10)||plan.first_date!==nextMonth(t.start_date)||plan.day!==Number(t.start_date.slice(-2)))return reply({error:'The first monthly Direct Debit must start one calendar month after storage starts.'},400);
+ const asset=(await db(`assets?id=eq.${t.asset_id}&select=asset_type`))[0];
+ if(asset?.asset_type!=='container')return reply({error:'Upfront storage payments are only supported for containers.'},400);
+ const creditors=(await gc('creditors?limit=2')).creditors;
+ if(creditors?.length!==1||!creditors[0].scheme_identifiers?.some(x=>x.scheme==='faster_payments'&&x.status==='active'))return reply({error:'Pay by Bank is not enabled. No payment request was created.'},409);
+ }else if(Number(plan.first_date.slice(-2))!==plan.day)return reply({error:'Collection date and day must match.'},400);
+ c.plan={amount_pence:plan.amount_pence,first_date:plan.first_date,day:plan.day,currency:'GBP',frequency:'monthly',...(upfront?{mode:UPFRONT_MODE,storage_start:t.start_date,upfront_amount_pence:plan.amount_pence}:{})};
  c.setup_token=crypto.randomUUID();c.terms_accepted_at=null;
  // Terms are fixed for this request; a replacement requires cancelling the old request first.
- // No amount or subscription: this authorises a mandate only; it never collects money.
- let b=await gc('billing_requests','POST',{billing_requests:{mandate_request:{scheme:'bacs'},metadata:{tenancy_id}}},'tenancy-mandate-v2-'+tenancy_id+'-'+plan.first_date+'-'+plan.amount_pence+'-'+previousRequest);
+ // Only the new explicit upfront plan requests payment; legacy links remain mandate-only.
+ let b=await gc('billing_requests','POST',{billing_requests:{mandate_request:{scheme:'bacs'},...(upfront?{fallback_enabled:false,payment_request:{amount:plan.amount_pence,currency:'GBP',scheme:'faster_payments',description:'First month — Pembrokeshire Self Storage'}}:{}),metadata:{tenancy_id}}},(upfront?'storage-upfront-v1-':'tenancy-mandate-v2-')+tenancy_id+'-'+plan.first_date+'-'+plan.amount_pence+'-'+previousRequest);
  if(b.conflict)b=await gc('billing_requests/'+encodeURIComponent(b.conflict));
  c.billing_request_id=b.billing_requests.id;c.billing_status=b.billing_requests.status;
  await db('gocardless_connections?on_conflict=tenancy_id','POST',c);
@@ -99,7 +115,7 @@ Deno.serve(async req=>{
  }
  }
  const returnURL=site+'/direct-debit.html';
- const f=await gc('billing_request_flows','POST',{billing_request_flows:{redirect_uri:returnURL,exit_uri:returnURL+'?cancelled=1',links:{billing_request:c.billing_request_id}}});
+ const f=await gc('billing_request_flows','POST',{billing_request_flows:{redirect_uri:returnURL+'#'+c.setup_token,exit_uri:returnURL+'?cancelled=1#'+c.setup_token,links:{billing_request:c.billing_request_id}}});
  c.setup_url=f.billing_request_flows.authorisation_url;c.updated_at=new Date().toISOString();
  await db('gocardless_connections?on_conflict=tenancy_id','POST',c);
  return reply({connection:c,url:site+'/direct-debit-setup.html#'+c.setup_token});
