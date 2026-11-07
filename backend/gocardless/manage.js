@@ -1,8 +1,12 @@
 import {db,gc,staff,refresh} from './common.js';
 import {version,documentText} from './agreement.js';
-const origin='https://cgrant03.github.io';
-const headers={'Access-Control-Allow-Origin':origin,'Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info','Access-Control-Allow-Methods':'POST,OPTIONS','Content-Type':'application/json'};
+const site='https://www.pembrokeshireselfstorage.co.uk';
+const allowedOrigins=new Set([site,'https://pembrokeshireselfstorage.co.uk','https://cgrant03.github.io']);
+const baseHeaders={'Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info','Access-Control-Allow-Methods':'POST,OPTIONS','Content-Type':'application/json'};
 Deno.serve(async req=>{
+ const origin=req.headers.get('origin');
+ const headers={...baseHeaders,Vary:'Origin',...(allowedOrigins.has(origin)?{'Access-Control-Allow-Origin':origin}:{})};
+ if(origin&&!allowedOrigins.has(origin))return new Response('Origin not allowed',{status:403});
  const reply=(data,status=200)=>new Response(JSON.stringify(data),{status,headers});
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers});
  if(req.method!=='POST')return reply({error:'Method not allowed'},405);
@@ -78,10 +82,10 @@ Deno.serve(async req=>{
  await db('storage_agreements','POST',{tenancy_id:t.id,setup_token:c.setup_token,version,document,document_hash:Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('')});
  }
  }
- const returnURL=origin+'/Pembrokeshire-self-storage/direct-debit.html';
+ const returnURL=site+'/direct-debit.html';
  const f=await gc('billing_request_flows','POST',{billing_request_flows:{redirect_uri:returnURL,exit_uri:returnURL+'?cancelled=1',links:{billing_request:c.billing_request_id}}});
  c.setup_url=f.billing_request_flows.authorisation_url;c.updated_at=new Date().toISOString();
  await db('gocardless_connections?on_conflict=tenancy_id','POST',c);
- return reply({connection:c,url:origin+'/Pembrokeshire-self-storage/direct-debit-setup.html#'+c.setup_token});
+ return reply({connection:c,url:site+'/direct-debit-setup.html#'+c.setup_token});
  }catch(e){return reply({error:e.message||'Connection failed'},502);}
 });

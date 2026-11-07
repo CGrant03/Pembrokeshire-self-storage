@@ -26,7 +26,7 @@ async function showAgreements(){
  for(const a of data){const row=document.createElement('p');row.textContent=(a.document.match(/Customer: (.*)/)?.[1]||'Customer')+' — '+(a.signed_at?'Signed '+new Date(a.signed_at).toLocaleString('en-GB'):'Awaiting signature')+' ';const link=document.createElement('a');const text=a.document+'\n\nSigned by: '+(a.signer_name||'Not signed')+'\nAddress: '+(a.signer_address||'')+'\nSigned at: '+(a.signed_at||'')+'\nEarly start requested: '+a.early_start+'\nDocument SHA-256: '+a.document_hash;link.href=URL.createObjectURL(new Blob([text],{type:'text/plain'}));link.download='storage-agreement-'+a.id+'.txt';link.textContent='Download agreement';row.append(link);box.append(row);}
  if(!data.length)box.append(document.createTextNode('No agreement links created yet.'));
 }
-function message(s){panel.querySelector('[data-message]').textContent=s;}
+function message(s){const el=panel.querySelector('[data-message]');el.textContent=s;if(s!=='Working…')el.scrollIntoView({behavior:'smooth',block:'center'});}
 function init(){
  if(!document.getElementById('managerPanel')||document.getElementById('gcPanel'))return;
  panel=document.createElement('section');panel.id='gcPanel';panel.className='card';
@@ -38,11 +38,12 @@ function init(){
  let plan; if(action==='setup'){const row=b.closest('[data-tenant]');const date=row.querySelector('[data-date]')?.value;const amount=row.querySelector('[data-amount]')?.value;if(row.querySelector('[data-date]')){if(!date||!amount)throw new Error('Enter the monthly total and first collection date first.');plan={amount_pence:Math.round(Number(amount)*100),first_date:date,day:Number(date.slice(-2))};}}
  if(action==='cancel_setup'&&!confirm('Cancel this pending setup and expire its old link? No customer record will be deleted.')){message('No changes made.');return;}
  if(action==='setup'&&!confirm('Confirm the customer, physical container number and storage start date in the tenancy are correct. Container customers will be asked to sign the storage agreement before bank setup. Continue?')){message('No link shared. Correct the tenancy details first.');return;}
+ message('Connecting to GoCardless…');
  const r=await call(action,id,plan);await load();
- if(r.url){const u=new URL(r.url);if(u.protocol!=='https:'||u.hostname!=='cgrant03.github.io'||u.pathname!=='/Pembrokeshire-self-storage/direct-debit-setup.html')throw new Error('Unexpected setup address');
- const box=panel.querySelector('[data-link="'+id+'"]');const a=document.createElement('a');a.href=u.href;a.target='_blank';a.rel='noopener noreferrer';a.textContent='Preview customer setup';box.append(a);const input=document.createElement('input');input.readOnly=true;input.value=u.href;input.setAttribute('aria-label','Tenant setup link');input.style.cssText='width:100%;margin-top:8px;padding:8px';box.append(input);input.addEventListener('click',()=>input.select());message('Customer setup link ready. Review it before sharing. After authorisation, schedule the matching amount and dates in GoCardless; no collection has been created here.');}
+ if(r.url){const u=new URL(r.url);if(u.protocol!=='https:'||!((u.hostname==='www.pembrokeshireselfstorage.co.uk'&&u.pathname==='/direct-debit-setup.html')||(u.hostname==='cgrant03.github.io'&&u.pathname==='/Pembrokeshire-self-storage/direct-debit-setup.html')))throw new Error('Unexpected setup address');
+ const box=panel.querySelector('[data-link="'+id+'"]');const a=document.createElement('a');a.href=u.href;a.target='_blank';a.rel='noopener noreferrer';a.textContent='Preview customer setup';box.append(a);const input=document.createElement('input');input.readOnly=true;input.value=u.href;input.setAttribute('aria-label','Tenant setup link');input.style.cssText='width:100%;margin-top:8px;padding:8px';box.append(input);input.addEventListener('click',()=>input.select());box.scrollIntoView({behavior:'smooth',block:'center'});message('Customer setup link ready. Review it before sharing. After authorisation, schedule the matching amount and dates in GoCardless; no collection has been created here.');}
  else message(action==='health'?'GoCardless live API connection verified. No payments have been created.':r.message||'Status updated from GoCardless.');
- }catch(err){message(err.message)}finally{b.disabled=false;}
+ }catch(err){message(/fetch|network|relay/i.test(err.message)?'Could not reach GoCardless. Check your connection and use Refresh status before trying again.':err.message)}finally{b.disabled=false;}
  });
 }
 new MutationObserver(init).observe(document.body,{childList:true,subtree:true});init();
