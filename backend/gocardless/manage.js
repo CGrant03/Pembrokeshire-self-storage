@@ -5,21 +5,10 @@ import {invitation} from './invitation.js';
 const site='https://www.pembrokeshireselfstorage.co.uk';
 const allowedOrigins=new Set([site,'https://pembrokeshireselfstorage.co.uk','https://cgrant03.github.io']);
 let optionsCache=null,optionsUntil=0;
-let senderCache=null,senderUntil=0;
 async function emailSender(){
- const configured=Deno.env.get('STORAGE_EMAIL_FROM');
- if(configured)return configured;
- if(senderCache&&Date.now()<senderUntil)return senderCache;
- const key=Deno.env.get('RESEND_API_KEY');
- let verified=false;
- if(key)try{
-  const response=await fetch('https://api.resend.com/domains',{headers:{Authorization:'Bearer '+key},signal:AbortSignal.timeout(10000)});
-  const result=await response.json();
-  verified=response.ok&&result.data?.some(d=>d.name==='pembrokeshireselfstorage.co.uk'&&d.status==='verified');
- }catch{}
- senderCache=verified?'Pembrokeshire Self Storage <storage@pembrokeshireselfstorage.co.uk>':'Pembrokeshire Self Storage <onboarding@resend.dev>';
- senderUntil=Date.now()+60000;
- return senderCache;
+ // This domain was verified in Resend on 7 November 2026.
+ // Sending-only API keys cannot list domains; do not require management permissions to send.
+ return Deno.env.get('STORAGE_EMAIL_FROM')||'Pembrokeshire Self Storage <storage@pembrokeshireselfstorage.co.uk>';
 }
 const baseHeaders={'Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Content-Type':'application/json'};
 Deno.serve(async req=>{
