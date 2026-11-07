@@ -35,7 +35,9 @@ Deno.serve(async(req)=>{
  'Message: '+p.requirements,
  '',
  'Open enquiries: '+dashboard,
- 'Visit website: '+website
+ 'Visit website: '+website,
+ 'Yard address: '+'Pembrokeshire Self Storage, Cartlett Office & Storage Park, Haverfordwest, Pembrokeshire, SA61 2LH',
+ 'Google Maps directions: '+'https://www.google.com/maps/dir/?api=1&destination=Pembrokeshire%20Self%20Storage%2C%20Cartlett%20Office%20%26%20Storage%20Park%2C%20Haverfordwest%2C%20Pembrokeshire%2C%20SA61%202LH'
  ].join('\n');
  const html='<div style="font-family:Arial,sans-serif;color:#172b36;max-width:560px;padding:20px">'
  +'<img src="cid:storage-logo" width="210" alt="Pembrokeshire Self Storage"><h2>New storage enquiry</h2>'
@@ -47,7 +49,7 @@ Deno.serve(async(req)=>{
  +'<p><strong>Start date:</strong> '+escapeHtml(p.preferred_date?date(p.preferred_date):'Not specified')+'</p>'
  +'<p><strong>Message:</strong><br>'+escapeHtml(p.requirements).replaceAll('\n','<br>')+'</p>'
  +'<p style="margin:28px 0"><a href="'+dashboard+'" style="background:#172b36;color:#fff;padding:14px 22px;text-decoration:none;border-radius:6px;display:inline-block">Open dashboard</a></p>'
- +'<p><a href="'+website+'">Visit my website</a></p></div>';
+ +'<p><a href="'+website+'">Visit my website</a></p><p style="line-height:1.6"><strong>Find the yard</strong><br>Pembrokeshire Self Storage<br>Cartlett Office &amp; Storage Park<br>Haverfordwest, Pembrokeshire<br>SA61 2LH</p><p><a href="https://www.google.com/maps/dir/?api=1&amp;destination=Pembrokeshire%20Self%20Storage%2C%20Cartlett%20Office%20%26%20Storage%20Park%2C%20Haverfordwest%2C%20Pembrokeshire%2C%20SA61%202LH" style="display:inline-block;background:#e9bb58;color:#062942;padding:14px 20px;border-radius:6px;text-decoration:none;font-weight:bold">Get directions on Google Maps</a></p></div>';
  const key=Deno.env.get('RESEND_API_KEY');
  if(!key)throw Error('Email service not configured');
  const sent=await fetch('https://api.resend.com/emails',{
