@@ -16,29 +16,42 @@ Deno.serve(async(req)=>{
  if(job.sent_at)return Response.json({sent:true});
  if(Date.now()-Date.parse(job.created_at)>23*3600000)return new Response('Expired',{status:410});
  const p=job.payload;
+
+ const website='https://www.pembrokeshireselfstorage.co.uk/';
+ const dashboard=website+'dashboard.html';
+ const contact=String(p.contact||'').replaceAll('\\n','\n');
+ const escapeHtml=(value)=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const text=[
  'New storage enquiry',
  '',
+ 'OPEN DASHBOARD:',
+ dashboard,
+ '',
  'Name: '+p.full_name,
- 'Contact: '+p.contact,
- 'Preferred start date: '+(p.preferred_date||'Not specified'),
+ 'Contact: '+contact,
+ 'Start date: '+(p.preferred_date||'Not specified'),
+ 'Message: '+p.requirements,
  '',
- 'Storage requirements:',
- p.requirements,
- '',
- 'Received: '+p.created_at,
- '',
- 'View and manage this enquiry in your private dashboard:',
- 'https://www.pembrokeshireselfstorage.co.uk/dashboard.html',
- '',
- 'This enquiry is saved in New enquiries. No reservation or payment has been made.'
+ 'Open enquiries: '+dashboard,
+ 'Visit website: '+website
  ].join('\n');
+ const html='<div style="font-family:Arial,sans-serif;color:#172b36;max-width:560px;padding:20px">'
+ +'<h2>New storage enquiry</h2>'
+ +'<p style="margin:20px 0"><a href="'+dashboard+'" style="background:#172b36;color:#ffffff;padding:16px 24px;text-decoration:none;border-radius:6px;display:inline-block;font-weight:bold">Open dashboard</a></p>'
+ +'<p style="font-size:15px;line-height:1.5;overflow-wrap:anywhere">Dashboard link:<br><a href="'+dashboard+'">'+dashboard+'</a></p>'
+ +'<p style="font-size:14px;color:#526574">Sign in if asked, then open New enquiries.</p>'
+ +'<p><strong>Name:</strong> '+escapeHtml(p.full_name)+'</p>'
+ +'<p><strong>Contact:</strong><br>'+escapeHtml(contact).replaceAll('\n','<br>')+'</p>'
+ +'<p><strong>Start date:</strong> '+escapeHtml(p.preferred_date||'Not specified')+'</p>'
+ +'<p><strong>Message:</strong><br>'+escapeHtml(p.requirements).replaceAll('\n','<br>')+'</p>'
+ +'<p style="margin:28px 0"><a href="'+dashboard+'" style="background:#172b36;color:#fff;padding:14px 22px;text-decoration:none;border-radius:6px;display:inline-block">Open dashboard</a></p>'
+ +'<p><a href="'+website+'">Visit my website</a></p></div>';
  const key=Deno.env.get('RESEND_API_KEY');
  if(!key)throw Error('Email service not configured');
  const sent=await fetch('https://api.resend.com/emails',{
  method:'POST',
  headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','Idempotency-Key':'storage-enquiry/'+body.id},
- body:JSON.stringify({from:'Pembrokeshire Self Storage <onboarding@resend.dev>',to:['midcounty12@gmail.com'],subject:'New storage enquiry — Pembrokeshire Self Storage',text}),
+ body:JSON.stringify({from:'Pembrokeshire Self Storage <onboarding@resend.dev>',to:['midcounty12@gmail.com'],subject:'New enquiry — '+String(p.full_name||'Customer').replace(/[\r\n]/g,' ').slice(0,100)+' — '+body.id.slice(0,8),text,html}),
  signal:AbortSignal.timeout(10000)
  });
  const result=await sent.json().catch(()=>({}));
