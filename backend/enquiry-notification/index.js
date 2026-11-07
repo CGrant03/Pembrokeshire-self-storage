@@ -1,3 +1,5 @@
+import {date} from './dates.js';
+import {logoAttachment} from './logo.js';
 
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 Deno.serve(async(req)=>{
@@ -29,20 +31,20 @@ Deno.serve(async(req)=>{
  '',
  'Name: '+p.full_name,
  'Contact: '+contact,
- 'Start date: '+(p.preferred_date||'Not specified'),
+ 'Start date: '+(p.preferred_date?date(p.preferred_date):'Not specified'),
  'Message: '+p.requirements,
  '',
  'Open enquiries: '+dashboard,
  'Visit website: '+website
  ].join('\n');
  const html='<div style="font-family:Arial,sans-serif;color:#172b36;max-width:560px;padding:20px">'
- +'<h2>New storage enquiry</h2>'
+ +'<img src="cid:storage-logo" width="210" alt="Pembrokeshire Self Storage"><h2>New storage enquiry</h2>'
  +'<p style="margin:20px 0"><a href="'+dashboard+'" style="background:#172b36;color:#ffffff;padding:16px 24px;text-decoration:none;border-radius:6px;display:inline-block;font-weight:bold">Open dashboard</a></p>'
  +'<p style="font-size:15px;line-height:1.5;overflow-wrap:anywhere">Dashboard link:<br><a href="'+dashboard+'">'+dashboard+'</a></p>'
  +'<p style="font-size:14px;color:#526574">Sign in if asked, then open New enquiries.</p>'
  +'<p><strong>Name:</strong> '+escapeHtml(p.full_name)+'</p>'
  +'<p><strong>Contact:</strong><br>'+escapeHtml(contact).replaceAll('\n','<br>')+'</p>'
- +'<p><strong>Start date:</strong> '+escapeHtml(p.preferred_date||'Not specified')+'</p>'
+ +'<p><strong>Start date:</strong> '+escapeHtml(p.preferred_date?date(p.preferred_date):'Not specified')+'</p>'
  +'<p><strong>Message:</strong><br>'+escapeHtml(p.requirements).replaceAll('\n','<br>')+'</p>'
  +'<p style="margin:28px 0"><a href="'+dashboard+'" style="background:#172b36;color:#fff;padding:14px 22px;text-decoration:none;border-radius:6px;display:inline-block">Open dashboard</a></p>'
  +'<p><a href="'+website+'">Visit my website</a></p></div>';
@@ -51,7 +53,7 @@ Deno.serve(async(req)=>{
  const sent=await fetch('https://api.resend.com/emails',{
  method:'POST',
  headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','Idempotency-Key':'storage-enquiry/'+body.id},
- body:JSON.stringify({from:'Pembrokeshire Self Storage <onboarding@resend.dev>',to:['midcounty12@gmail.com'],subject:'New enquiry — '+String(p.full_name||'Customer').replace(/[\r\n]/g,' ').slice(0,100)+' — '+body.id.slice(0,8),text,html}),
+ body:JSON.stringify({from:'Pembrokeshire Self Storage <storage@pembrokeshireselfstorage.co.uk>',to:['midcounty12@gmail.com'],subject:'New enquiry — '+String(p.full_name||'Customer').replace(/[\r\n]/g,' ').slice(0,100)+' — '+body.id.slice(0,8),text,html,attachments:[logoAttachment]}),
  signal:AbortSignal.timeout(10000)
  });
  const result=await sent.json().catch(()=>({}));

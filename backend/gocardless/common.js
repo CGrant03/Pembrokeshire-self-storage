@@ -1,3 +1,4 @@
+import {deliverAccess} from './access.js';
 import {syncMonthly,UPFRONT_MODE} from './billing.js';
 const SB=Deno.env.get('SUPABASE_URL');
 const SERVICE=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -39,7 +40,9 @@ export async function refresh(c){
  if(c.first_payment_id)patch.first_payment_id=c.first_payment_id;
  if(c.first_payment_status)patch.first_payment_status=c.first_payment_status;
  await db(`gocardless_connections?tenancy_id=eq.${c.tenancy_id}`,'PATCH',patch);
- return await syncMonthly(c,{db,gc},mandate);
+ const updated=await syncMonthly(c,{db,gc},mandate);
+ await deliverAccess(updated,{db});
+ return updated;
 }
 export async function validSignature(raw,hex,secret){
  if(!secret||!/^[a-f0-9]{64}$/i.test(hex||''))return false;

@@ -1,3 +1,5 @@
+import {publicAgreement,identityComplete,validateIdentity,saveId,removeId,staffIdUrl,MAX_ID_BYTES} from './identity.js';
+import {deliverAccess} from './access.js';
 import {UPFRONT_MODE,nextMonth} from './billing.js';
 import {db,gc,staff,refresh} from './common.js';
 import {version,documentText} from './agreement.js';
@@ -23,32 +25,52 @@ Deno.serve(async req=>{
  }
  if(req.method!=='POST')return reply({error:'Method not allowed'},405);
  try{
- if(Number(req.headers.get('content-length')||0)>12000)return reply({error:'Request too large'},413);
- const input=await req.json();
+ const multipart=(req.headers.get('content-type')||'').startsWith('multipart/form-data');
+ const maxBody=multipart?MAX_ID_BYTES+20000:12000;
+ if(Number(req.headers.get('content-length')||0)>maxBody)return reply({error:'ID file must be 5 MB or smaller.'},413);
+ const reader=req.body?.getReader();let size=0,chunks=[];
+ if(!reader)return reply({error:'Missing request'},400);
+ while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>maxBody){await reader.cancel();return reply({error:'Request too large'},413);}chunks.push(value);}
+ const body=new Blob(chunks,{type:req.headers.get('content-type')||'application/json'});
+ let input,idFile;
+ if(multipart){const form=await new Response(body).formData();input=JSON.parse(String(form.get('payload')||'{}'));idFile=form.get('identification');if(input.action!=='sign_agreement')return reply({error:'Invalid upload request'},400);}
+ else input=JSON.parse(await body.text());
  if(['terms','accept_terms','sign_agreement','payment_status'].includes(input.action)){
  if(!/^[a-f0-9-]{36}$/i.test(input.token||''))return reply({error:'Invalid setup link'},404);
  const c=(await db(`gocardless_connections?setup_token=eq.${input.token}`))[0];
- if(input.action==='payment_status'){if(!c?.plan)return reply({error:'Setup not found'},404);return reply({upfront:c.plan.mode===UPFRONT_MODE,first_payment_status:c.first_payment_status||'pending',mandate_status:c.mandate_status||'pending',subscription_status:c.subscription_status||'pending',needs_attention:!!c.billing_error});}
+ if(input.action==='payment_status'){
+ if(!c?.plan)return reply({error:'Setup not found'},404);
+ let access=null,accessError=false;try{access=await deliverAccess(c,{db});}catch{accessError=true;}
+ return reply({upfront:c.plan.mode===UPFRONT_MODE,first_payment_status:c.first_payment_status||'pending',mandate_status:c.mandate_status||'pending',subscription_status:c.subscription_status||'pending',needs_attention:!!c.billing_error,access_sent:!!access?.sent,access_error:accessError});
+ }
  if(!c?.plan||!c.setup_url||['cancelled','fulfilled'].includes(c.billing_status))return reply({error:'This setup link is closed. Please ask for a new link.'},410);
  if(c.plan.first_date<=new Date().toISOString().slice(0,10))return reply({error:'The proposed first date has passed. Please ask for a new collection date.'},410);
  const agreement=(await db(`storage_agreements?setup_token=eq.${input.token}`))[0];
  if(input.action==='sign_agreement'){
  if(!agreement)return reply({error:'Agreement unavailable; ask us for a new link.'},409);
- if(agreement.signed_at)return reply({agreement});
- const name=String(input.signer_name||'').trim(),address=String(input.signer_address||'').trim();
+ if(identityComplete(agreement))return reply({agreement:publicAgreement(agreement)});
+ const name=String(input.signer_name||'').trim(),address=String(input.signer_address||'').trim(),phone=String(input.signer_phone||'').trim();
+ try{validateIdentity(name,address,phone);}catch(e){return reply({error:e.message},400);}
+ if(agreement.signed_at&&(name!==agreement.signer_name||address!==agreement.signer_address))return reply({error:'This agreement is already signed. Keep the signed name and address, or contact us to correct it.'},409);
  if(input.accepted!==true||name.length<2||name.length>150||address.length<5||address.length>500||input.document_hash!==agreement.document_hash)return reply({error:'Read the agreement and enter your full name and address.'},400);
  const tenant=(await db(`tenancies?id=eq.${c.tenancy_id}&select=start_date`))[0];
  if(tenant.start_date<=new Date(Date.now()+14*86400000).toISOString().slice(0,10)&&input.early_start!==true)return reply({error:'Please request the early start or contact us to change your start date.'},400);
- const signed=await db(`storage_agreements?id=eq.${agreement.id}&signed_at=is.null`,'PATCH',{signed_at:new Date().toISOString(),signer_name:name,signer_address:address,early_start:input.early_start===true});
- return reply({agreement:signed[0]||(await db(`storage_agreements?id=eq.${agreement.id}`))[0]});
+ let document;
+ try{document=await saveId(idFile,agreement.id);}catch(e){return reply({error:e.message},400);}
+ let signed;
+ try{signed=await db(`storage_agreements?id=eq.${agreement.id}&id_document_path=is.null`,'PATCH',{signed_at:agreement.signed_at||new Date().toISOString(),signer_name:name,signer_address:address,signer_phone:phone,early_start:agreement.signed_at?agreement.early_start:input.early_start===true,...document});}
+ catch(e){await removeId(document.id_document_path).catch(()=>{});throw e;}
+ if(!signed.length)await removeId(document.id_document_path).catch(()=>{});
+ const stored=signed[0]||(await db(`storage_agreements?id=eq.${agreement.id}`))[0];
+ return reply({agreement:publicAgreement(stored)});
  }
  if(input.action==='accept_terms'){
- if(agreement&&!agreement.signed_at)return reply({error:'Please sign your storage agreement first.'},409);
+ if(agreement&&!identityComplete(agreement))return reply({error:'Please save your full details, ID and signed agreement first.'},409);
  if(input.accepted!==true)return reply({error:'Please confirm the payment terms'},400);
  await db(`gocardless_connections?tenancy_id=eq.${c.tenancy_id}`,'PATCH',{terms_accepted_at:new Date().toISOString()});
  return reply({url:c.setup_url});
  }
- return reply({plan:c.plan,agreement:agreement||null});
+ return reply({plan:c.plan,agreement:publicAgreement(agreement)});
  }
  if(!await staff(req))return reply({error:'Staff sign-in required'},403);
  const {action,tenancy_id,plan}=input;
@@ -56,6 +78,11 @@ Deno.serve(async req=>{
  if(!/^[0-9a-f-]{36}$/i.test(tenancy_id||''))return reply({error:'Invalid tenancy'},400);
  const t=(await db(`tenancies?id=eq.${tenancy_id}&select=id,status,asset_id,customer_id,start_date`))[0];if(!t)return reply({error:'Tenancy not found'},404);
  let c=(await db(`gocardless_connections?tenancy_id=eq.${tenancy_id}`))[0]||{tenancy_id,billing_status:'not_started'};
+ if(action==='agreement_record'){
+ const records=await db(`storage_agreements?tenancy_id=eq.${tenancy_id}&order=created_at.desc`);
+ const record=records[0];if(!record)return reply({error:'No agreement saved yet.'},404);
+ return reply({agreement:publicAgreement(record),id_url:await staffIdUrl(record.id_document_path)});
+ }
  if(action==='email_invitation'){
  if(!c.setup_token||!c.setup_url||!c.plan||['cancelled','fulfilled'].includes(c.billing_status)||c.mandate_id)return reply({error:'This setup link is closed. Check the tenant status before sending.'},409);
  if(c.plan.first_date<=new Date().toISOString().slice(0,10))return reply({error:'The collection date has passed. Prepare a new link first.'},409);
@@ -70,7 +97,7 @@ Deno.serve(async req=>{
  const testRecipient=/^TEST\b/i.test(customer.full_name||'')&&/^midcounty12\+[^@]+@gmail\.com$/i.test(customer.email);
  const recipient=testRecipient?'midcounty12@gmail.com':customer.email;
  if(from.includes('@resend.dev')&&recipient.toLowerCase()!=='midcounty12@gmail.com')return reply({error:'Customer emails need your business email domain verified first. For now, use “Open email app” to send this agreement.',code:'sender_not_ready'},409);
- const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','Idempotency-Key':'storage-invitation/'+c.setup_token+'/'+recipient},body:JSON.stringify({from,to:[recipient],reply_to:'midcounty12@gmail.com',...email}),signal:AbortSignal.timeout(10000)});
+ const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','Idempotency-Key':'storage-invitation-v2/'+c.setup_token+'/'+recipient},body:JSON.stringify({from,to:[recipient],reply_to:'midcounty12@gmail.com',...email}),signal:AbortSignal.timeout(10000)});
  const outcome=await sent.json().catch(()=>({}));
  if(!sent.ok)return reply({error:sent.status===403?'The email provider rejected this sender or recipient. Your business email domain needs checking. Use “Open email app” to send this agreement.':'Email was not sent. Use your email app below or try again.'},502);
  return reply({sent:true,to:recipient});
@@ -120,7 +147,7 @@ Deno.serve(async req=>{
  if(!agreement){
  if(input.agreement_confirmed!==true)return reply({error:'Check and confirm the container and storage start date before creating the agreement link.'},400);
  const customer=(await db(`customers?id=eq.${t.customer_id}&select=full_name`))[0];
- const document=documentText({customer:customer.full_name,container:asset.name,site:asset.location||'Cartlett Office & Storage Park, Haverfordwest',start_date:t.start_date,plan:c.plan});
+ const document=documentText({customer:customer.full_name,container:asset.name.replace(/\s+[—–].*$/,''),site:asset.location||'Cartlett Office & Storage Park, Haverfordwest',start_date:t.start_date,plan:c.plan});
  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(document));
  await db('storage_agreements','POST',{tenancy_id:t.id,setup_token:c.setup_token,version,document,document_hash:Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('')});
  }

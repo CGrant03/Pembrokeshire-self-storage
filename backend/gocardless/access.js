@@ -1,0 +1,28 @@
+import {identityComplete} from './identity.js';
+import {logoAttachment} from './logo.js';
+import {date} from './dates.js';
+export function accessEligible(c,a,t){return c.plan?.mode==='upfront_monthly_v1'&&!!c.first_payment_id&&['confirmed','paid_out'].includes(c.first_payment_status)&&c.mandate_status==='active'&&c.subscription_status==='active'&&!!c.terms_accepted_at&&!c.billing_error&&identityComplete(a)&&a.setup_token===c.setup_token&&['active','pending'].includes(t?.status);}
+const esc=x=>String(x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+export async function deliverAccess(c,{db,send=fetch}){
+ if(c.plan?.mode!=='upfront_monthly_v1'||!['confirmed','paid_out'].includes(c.first_payment_status)||c.subscription_status!=='active')return null;
+ const a=(await db(`storage_agreements?setup_token=eq.${c.setup_token}`))[0];
+ const t=(await db(`tenancies?id=eq.${c.tenancy_id}&select=status,asset_id,customer_id,start_date`))[0];
+ if(!accessEligible(c,a,t))return null;
+ const config=(await db(`storage_access_codes?asset_id=eq.${t.asset_id}`))[0];
+ if(!config?.enabled)return null;
+ const previous=(await db(`storage_access_deliveries?agreement_id=eq.${a.id}`))[0];
+ if(previous?.sent_at)return {sent:true};
+ const customer=(await db(`customers?id=eq.${t.customer_id}&select=email`))[0];
+ if(!customer?.email)return null;
+ const asset=(await db(`assets?id=eq.${t.asset_id}&select=name`))[0];
+ const container=asset?.name?.match(/^Container\s+\d+/i)?.[0]||'Your container';
+ // The request body remains identical for retries of the same agreement.
+ const text=`Hi ${a.signer_name},\n\nYour first payment is confirmed and your signed agreement and ID are saved.\n\n${container}\nStorage starts: ${date(t.start_date)}\nGate code: ${config.gate_code}\nContainer lock-box code: ${config.lockbox_code}\n\nUse these details from your storage start date. Please keep the codes private, close the gate and scramble the lock-box numbers after use.\n\nYour agreement and payment status: https://www.pembrokeshireselfstorage.co.uk/direct-debit.html#${c.setup_token}\n\nQuestions? Call 01437 723694 or reply to this email.\n\nMiles\nPembrokeshire Self Storage`;
+ const payload={from:Deno.env.get('STORAGE_EMAIL_FROM')||'Pembrokeshire Self Storage <storage@pembrokeshireselfstorage.co.uk>',to:[customer.email],reply_to:'midcounty12@gmail.com',subject:'Your storage access details | Pembrokeshire Self Storage',text,html:`<div style="font:16px/1.6 Arial;color:#102c3c;max-width:600px;margin:auto"><img src="cid:storage-logo" width="210" alt="Pembrokeshire Self Storage"><h1>Your storage is ready</h1><div style="white-space:pre-line">${esc(text)}</div></div>`,attachments:[logoAttachment]};
+ const key=Deno.env.get('RESEND_API_KEY');if(!key)throw Error('Access email sending is unavailable.');
+ const r=await send('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','Idempotency-Key':'storage-access/'+a.id},body:JSON.stringify(payload),signal:AbortSignal.timeout(10000)});
+ if(!r.ok)throw Error('Access email was not sent; refresh payment status to retry.');
+ const result=await r.json();
+ await db('storage_access_deliveries?on_conflict=agreement_id','POST',{agreement_id:a.id,tenancy_id:c.tenancy_id,sent_at:new Date().toISOString(),provider_id:result.id});
+ return {sent:true};
+}

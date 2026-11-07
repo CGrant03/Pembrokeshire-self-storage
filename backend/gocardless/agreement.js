@@ -1,3 +1,4 @@
+import {date,ordinal} from './dates.js';
 export const version='2026-11-07-v2';
 export const conditions=`STORAGE AGREEMENT
 Miles John Williams Limited trading as Pembrokeshire Self Storage
@@ -37,5 +38,5 @@ Keep your contact details up to date. We use details to administer storage, agre
 export function documentText(d){
  const upfront=d.plan.mode==='upfront_monthly_v1';
  const terms=upfront?conditions.replace('Signing does not itself authorise a Direct Debit. Bank authorisation is completed separately through GoCardless, and the collection schedule must be confirmed before collection.','The first month is paid upfront by Pay by Bank through GoCardless. This covers storage from the storage start date until the first monthly Direct Debit date (exclusive). Signing alone does not take payment. On the following payment page you authorise the upfront payment and set up a Direct Debit. By accepting the payment schedule you authorise recurring monthly rent from the date shown below. GoCardless will send payment notifications. Access is confirmed by our team after payment is confirmed.'):conditions;
- return `${terms}\n\nAGREEMENT DETAILS\nCustomer: ${d.customer}\nContainer: ${d.container}\nSite: ${d.site}\nStorage start: ${d.start_date}\nMonthly total including VAT: £${(d.plan.amount_pence/100).toFixed(2)}\n${upfront?'First month payable now: £'+(d.plan.amount_pence/100).toFixed(2)+' including VAT\nFirst monthly Direct Debit (month two)':'Proposed first collection'}: ${d.plan.first_date}\nRegular collection day: ${d.plan.day} (last day in shorter months; non-working days move to the next working day)\nVersion: ${version}`;
+ return `${terms}\n\nAGREEMENT DETAILS\nCustomer: ${d.customer}\nContainer: ${d.container}\nSite: ${d.site}\nStorage start: ${date(d.start_date)}\nMonthly total including VAT: £${(d.plan.amount_pence/100).toFixed(2)}\n${upfront?'First month payable now: £'+(d.plan.amount_pence/100).toFixed(2)+' including VAT\nFirst monthly Direct Debit (month two)':'Proposed first collection'}: ${date(d.plan.first_date)}\nRegular collection day: ${ordinal(d.plan.day)} of each month (last day in shorter months; non-working days move to the next working day)\nVersion: ${version}`;
 }
