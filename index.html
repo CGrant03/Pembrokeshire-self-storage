@@ -61,7 +61,7 @@ document.getElementById('enquiryForm').addEventListener('submit',async function(
  try{
  const response=await fetch('https://vxurmlmmrlclfydiobgm.supabase.co/rest/v1/storage_enquiries',{method:'POST',headers:{apikey:'sb_publishable_nYgRvuOk0nK1oQfLIaksqA_n0bfFMMg','Content-Type':'application/json',Prefer:'return=minimal'},body:JSON.stringify(record),signal:AbortSignal.timeout(20000)});
  if(!response.ok&&response.status!==409)throw new Error('Could not save');
- status.textContent='Thank you — your enquiry has been received. We’ll check availability for your chosen date and email your agreement and payment link. Once your agreement, ID, first payment and monthly Direct Debit are complete, your gate and container lock-box codes will be emailed automatically. No payment has been taken.';f.reset();enquiryId=crypto.randomUUID();
+ status.textContent='Thank you — your enquiry has been received. We’ll check availability for your chosen date and email your agreement and payment link. Once your signed agreement and ID are saved and your first payment is confirmed, your gate and container lock-box codes will be emailed automatically. No payment has been taken.';f.reset();enquiryId=crypto.randomUUID();
  }catch(err){status.textContent='Your enquiry could not be confirmed. Please try again, or call 01437 723694. Your details are still in the form.';}
  finally{button.disabled=false;}
 });

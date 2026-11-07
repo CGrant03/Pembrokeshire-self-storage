@@ -40,9 +40,10 @@ export async function refresh(c){
  if(c.first_payment_id)patch.first_payment_id=c.first_payment_id;
  if(c.first_payment_status)patch.first_payment_status=c.first_payment_status;
  await db(`gocardless_connections?tenancy_id=eq.${c.tenancy_id}`,'PATCH',patch);
- const updated=await syncMonthly(c,{db,gc},mandate);
- await deliverAccess(updated,{db});
- return updated;
+ // Attempt both independently: monthly scheduling must not delay paid access.
+ const results=await Promise.allSettled([syncMonthly(c,{db,gc},mandate),deliverAccess(c,{db})]);
+ for(const result of results)if(result.status==='rejected')throw result.reason;
+ return results[0].value;
 }
 export async function validSignature(raw,hex,secret){
  if(!secret||!/^[a-f0-9]{64}$/i.test(hex||''))return false;

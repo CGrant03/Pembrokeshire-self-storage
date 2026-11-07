@@ -1,10 +1,10 @@
 import {identityComplete} from './identity.js';
 import {logoAttachment} from './logo.js';
 import {date} from './dates.js';
-export function accessEligible(c,a,t){return c.plan?.mode==='upfront_monthly_v1'&&!!c.first_payment_id&&['confirmed','paid_out'].includes(c.first_payment_status)&&c.mandate_status==='active'&&c.subscription_status==='active'&&!!c.terms_accepted_at&&!c.billing_error&&identityComplete(a)&&a.setup_token===c.setup_token&&['active','pending'].includes(t?.status);}
+export function accessEligible(c,a,t){return c.plan?.mode==='upfront_monthly_v1'&&!!c.first_payment_id&&['confirmed','paid_out'].includes(c.first_payment_status)&&!!c.terms_accepted_at&&identityComplete(a)&&a.setup_token===c.setup_token&&['active','pending'].includes(t?.status);}
 const esc=x=>String(x).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export async function deliverAccess(c,{db,send=fetch}){
- if(c.plan?.mode!=='upfront_monthly_v1'||!['confirmed','paid_out'].includes(c.first_payment_status)||c.subscription_status!=='active')return null;
+ if(c.plan?.mode!=='upfront_monthly_v1'||!['confirmed','paid_out'].includes(c.first_payment_status))return null;
  const a=(await db(`storage_agreements?setup_token=eq.${c.setup_token}`))[0];
  const t=(await db(`tenancies?id=eq.${c.tenancy_id}&select=status,asset_id,customer_id,start_date`))[0];
  if(!accessEligible(c,a,t))return null;
