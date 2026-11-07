@@ -28,7 +28,7 @@ function initUI(){
  '<select id="assetGroupFilter" style="padding:9px;border:1px solid #c7d2d9;border-radius:7px"><option value="">All groups</option></select>'+
  '<button class="btn btn2" type="button" data-action="refresh">Refresh records</button></div>'+
  '<div id="assetEditor" class="mg-edit" style="display:none"></div></div>'+
- '<div class="mg-cols"><div class="card"><h2>Add a tenant / customer</h2>'+
+ '<details class="card"><summary>Manual customer and tenancy entry</summary><div class="mg-cols"><div class="card"><h2>Add a tenant / customer</h2>'+
  '<form id="addCustomerForm"><div class="mg-field"><label for="customerName">Full name *</label><input id="customerName" required maxlength="150"></div>'+
  '<div class="mg-field"><label for="customerEmail">Email</label><input id="customerEmail" type="email" maxlength="240"></div>'+
  '<div class="mg-field"><label for="customerPhone">Phone</label><input id="customerPhone" type="tel" maxlength="40"></div>'+
@@ -41,7 +41,7 @@ function initUI(){
  '<div class="mg-field"><label for="tenancyRent">Rent amount (£) *</label><input type="number" min="0.01" step="0.01" id="tenancyRent" required></div>'+
  '<div class="mg-field"><label for="tenancyPayDay">Payment day (1–28, optional)</label><input type="number" min="1" max="28" id="tenancyPayDay"></div>'+
  '<button type="submit" class="btn">Save tenancy</button></form>'+
- '<p class="mg-help">A tenancy records who rents an asset; it does not automatically collect rent or create legal agreements.</p></div></div>'+
+ '<p class="mg-help">A tenancy records who rents an asset; it does not automatically collect rent or create legal agreements.</p></div></div></details>'+
  '<div class="card"><h2>Current tenancies</h2><div id="tenancyList" class="mg-tablewrap"></div></div>'+
  '<div class="mg-cols"><div class="card"><h2>Record money received</h2>'+
  '<form id="recordPaymentForm"><div class="mg-field"><label for="payTenancy">Tenancy *</label><select id="payTenancy" required></select></div>'+
@@ -335,19 +335,7 @@ async function syncBank(id,btn){
  }catch(e){status("Bank sync unsuccessful: "+readableError(e))}
  finally{btn.disabled=false}
 }
-async function loadEnquiries(){
- let box=byId('enquiryPanel');if(!box){box=document.createElement('section');box.id='enquiryPanel';box.className='card';byId('managerPanel').prepend(box);}
- box.innerHTML='<h2>New enquiries</h2><p>Loading enquiries…</p>';
- const {data,error}=await db.from('storage_enquiries').select('*').order('created_at',{ascending:false}).limit(200);
- if(error){box.innerHTML='<h2>New enquiries</h2><p>Enquiries could not load. Use Refresh records to retry.</p>';return;}
- box.innerHTML='<h2>New enquiries</h2><p>Review details, confirm the unit and rent, then create their tenancy and personal GoCardless link. No payment is started by an enquiry.</p>'+(data.length?'':'<p>No enquiries yet.</p>');
- for(const row of data){const card=document.createElement('div');card.className='mg-edit';
- card.innerHTML='<h3>'+esc(row.full_name)+'</h3><p>'+esc(row.contact)+(row.phone&&row.phone!==row.contact?'<br>Phone: '+esc(row.phone):'')+'</p><p>Preferred start: '+esc(row.preferred_date||'To discuss')+' · Received '+esc(new Date(row.created_at).toLocaleDateString('en-GB'))+'</p><p style="white-space:pre-wrap">'+esc(row.requirements)+'</p>';
- const label=document.createElement('label');label.textContent='Status ';const select=document.createElement('select');select.setAttribute('aria-label','Enquiry status for '+row.full_name);
- for(const value of ['new','contacted','closed']){const o=document.createElement('option');o.value=value;o.textContent=value;o.selected=row.status===value;select.append(o);}
- select.onchange=async()=>{const previous=row.status;select.disabled=true;const {error}=await db.from('storage_enquiries').update({status:select.value}).eq('id',row.id);if(error){select.value=previous;status('Could not update enquiry.');}else row.status=select.value;select.disabled=false;};label.append(select);card.append(label);
- const btn=document.createElement('button');btn.className='btn';btn.type='button';btn.textContent='Use details for customer';btn.onclick=()=>{byId('customerName').value=row.full_name;byId('customerEmail').value=row.contact.includes('@')?row.contact:'';byId('customerPhone').value=row.phone||(row.contact.includes('@')?'':row.contact);byId('addCustomerForm').scrollIntoView({behavior:'smooth'});status('Details copied below. Check for an existing customer before saving, then assign a tenancy and arrange their payment link.');};card.append(btn);box.append(card);}
-}
+async function loadEnquiries(){await window.loadStorageEnquiries();}
 window.rentalManagerLoad=reload;
 window.rentalManagerState=()=>({assets:state.assets.length,customers:state.customers.length,tenancies:state.tenancies.length,transactions:state.transactions.length});
 })();
