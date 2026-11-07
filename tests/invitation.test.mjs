@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {invitation} from '../backend/gocardless/invitation.js';
-let handler;
-globalThis.Deno={env:{get:k=>({SUPABASE_URL:'https://db.test',SUPABASE_SERVICE_ROLE_KEY:'service',SUPABASE_ANON_KEY:'anon',RESEND_API_KEY:'test-key'})[k]},serve:h=>handler=h};
+let handler,testFrom;
+globalThis.Deno={env:{get:k=>({SUPABASE_URL:'https://db.test',SUPABASE_SERVICE_ROLE_KEY:'service',SUPABASE_ANON_KEY:'anon',RESEND_API_KEY:'test-key',STORAGE_EMAIL_FROM:testFrom})[k]},serve:h=>handler=h};
 await import('../backend/gocardless/manage.js');
 const id='00000000-0000-4000-8000-000000000001';
 const plan={amount_pence:15600,first_date:'2027-11-20',day:20};
@@ -13,9 +13,9 @@ let calls=[],status='pending',providerStatus=200,customerName='Miles',customerEm
 globalThis.fetch=async(url,o={})=>{calls.push({url,o});if(url.endsWith('/auth/v1/user'))return json({id:'staff'});if(url.includes('/staff_users?'))return json([{user_id:'staff'}]);if(url.includes('/tenancies?'))return json([{id,status:'pending',customer_id:id,asset_id:id,start_date:data.start}]);if(url.includes('/gocardless_connections?'))return json([{setup_token:id,setup_url:'https://pay.gocardless.com/test',plan,billing_status:status}]);if(url.includes('/customers?'))return json([{full_name:customerName,email:customerEmail}]);if(url.includes('/assets?'))return json([{name:'C11'}]);if(url==='https://api.resend.com/domains')return json({data:[]});if(url==='https://api.resend.com/emails')return new Response(JSON.stringify({id:'email-test'}),{status:providerStatus});throw Error('Unexpected request '+url);};
 const request=(auth=true)=>new Request('https://fn.test',{method:'POST',headers:{...(auth?{authorization:'Bearer staff'}:{})},body:JSON.stringify({action:'email_invitation',tenancy_id:id})});
 test('unauthenticated caller cannot send',async()=>{calls=[];assert.equal((await handler(request(false))).status,403);assert.equal(calls.length,0);});
-test('sends to saved customer with reply address and makes no GoCardless writes',async()=>{calls=[];const r=await handler(request());assert.equal(r.status,200);const payload=JSON.parse(calls.find(c=>c.url.endsWith('/emails')).o.body);assert.deepEqual(payload.to,['midcounty12@gmail.com']);assert.equal(payload.reply_to,'midcounty12@gmail.com');assert(payload.html.includes('logo.jpeg'));assert(!calls.some(c=>c.url.includes('gocardless.com')));});
+test('sends to saved customer with reply address and makes no GoCardless writes',async()=>{calls=[];const r=await handler(request());assert.equal(r.status,200);const payload=JSON.parse(calls.find(c=>c.url.endsWith('/emails')).o.body);assert.deepEqual(payload.to,['midcounty12@gmail.com']);assert.equal(payload.reply_to,'midcounty12@gmail.com');assert.equal(payload.from,'Pembrokeshire Self Storage <storage@pembrokeshireselfstorage.co.uk>');assert(!calls.some(c=>c.url.endsWith('/domains')));assert(payload.html.includes('logo.jpeg'));assert(!calls.some(c=>c.url.includes('gocardless.com')));});
 test('closed setup cannot send a misleading invitation',async()=>{status='fulfilled';calls=[];assert.equal((await handler(request())).status,409);assert(!calls.some(c=>c.url.includes('resend.com')));status='pending';});
 test('provider rejection is never reported as sent',async()=>{providerStatus=403;const r=await handler(request());assert.equal(r.status,502);assert.match((await r.json()).error,/email provider rejected/);});
 
 test('owner test alias is delivered to exact authorised inbox',async()=>{providerStatus=200;customerName='TEST — Dashboard link at top';customerEmail='midcounty12+dashboardlink20261107@gmail.com';calls=[];const r=await handler(request());assert.equal(r.status,200);assert.equal((await r.json()).to,'midcounty12@gmail.com');assert.deepEqual(JSON.parse(calls.find(c=>c.url.endsWith('/emails')).o.body).to,['midcounty12@gmail.com']);});
-test('customer email cannot be redirected to owner',async()=>{customerName='Customer';customerEmail='someone@example.com';calls=[];const r=await handler(request());assert.equal(r.status,409);assert(!calls.some(c=>c.url.endsWith('/emails')));});
+test('customer email cannot be redirected to owner',async()=>{testFrom='Pembrokeshire Self Storage <onboarding@resend.dev>';customerName='Customer';customerEmail='someone@example.com';calls=[];const r=await handler(request());assert.equal(r.status,409);assert(!calls.some(c=>c.url.endsWith('/emails')));});
