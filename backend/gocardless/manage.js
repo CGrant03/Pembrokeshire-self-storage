@@ -5,6 +5,22 @@ import {invitation} from './invitation.js';
 const site='https://www.pembrokeshireselfstorage.co.uk';
 const allowedOrigins=new Set([site,'https://pembrokeshireselfstorage.co.uk','https://cgrant03.github.io']);
 let optionsCache=null,optionsUntil=0;
+let senderCache=null,senderUntil=0;
+async function emailSender(){
+ const configured=Deno.env.get('STORAGE_EMAIL_FROM');
+ if(configured)return configured;
+ if(senderCache&&Date.now()<senderUntil)return senderCache;
+ const key=Deno.env.get('RESEND_API_KEY');
+ let verified=false;
+ if(key)try{
+  const response=await fetch('https://api.resend.com/domains',{headers:{Authorization:'Bearer '+key},signal:AbortSignal.timeout(10000)});
+  const result=await response.json();
+  verified=response.ok&&result.data?.some(d=>d.name==='pembrokeshireselfstorage.co.uk'&&d.status==='verified');
+ }catch{}
+ senderCache=verified?'Pembrokeshire Self Storage <storage@pembrokeshireselfstorage.co.uk>':'Pembrokeshire Self Storage <onboarding@resend.dev>';
+ senderUntil=Date.now()+60000;
+ return senderCache;
+}
 const baseHeaders={'Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Content-Type':'application/json'};
 Deno.serve(async req=>{
  const origin=req.headers.get('origin');
@@ -13,6 +29,7 @@ Deno.serve(async req=>{
  const reply=(data,status=200)=>new Response(JSON.stringify(data),{status,headers});
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers});
  if(req.method==='GET'){
+ if(new URL(req.url).searchParams.has('email_status'))return reply({business_email_ready:!(await emailSender()).includes('@resend.dev'),email_configured:!!Deno.env.get('RESEND_API_KEY')});
  try{if(!optionsCache||Date.now()>optionsUntil){const result=await gc('creditors?limit=2');const schemes=result.creditors?.length===1?result.creditors[0].scheme_identifiers||[]:[];optionsCache={pay_by_bank:schemes.some(s=>s.scheme==='faster_payments'&&s.status==='active'),direct_debit:schemes.some(s=>s.scheme==='bacs'&&s.status==='active')};optionsUntil=Date.now()+60000;}return reply(optionsCache);}catch{return reply({error:'Payment options unavailable'},503);}
  }
  if(req.method!=='POST')return reply({error:'Method not allowed'},405);
@@ -59,11 +76,15 @@ Deno.serve(async req=>{
  const key=Deno.env.get('RESEND_API_KEY');
  if(!key)return reply({error:'Email sending is unavailable. Use your email app below.'},503);
  const email=invitation({name:customer.full_name,container:asset.name,start:t.start_date,plan:c.plan,token:c.setup_token});
- const from=Deno.env.get('STORAGE_EMAIL_FROM')||'Pembrokeshire Self Storage <onboarding@resend.dev>';
- const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','Idempotency-Key':'storage-invitation/'+c.setup_token},body:JSON.stringify({from,to:[customer.email],reply_to:'midcounty12@gmail.com',...email}),signal:AbortSignal.timeout(10000)});
+ const from=await emailSender();
+ // Test aliases belong to the owner's inbox, but Resend's test sender requires the exact address.
+ const testRecipient=/^TEST\b/i.test(customer.full_name||'')&&/^midcounty12\+[^@]+@gmail\.com$/i.test(customer.email);
+ const recipient=testRecipient?'midcounty12@gmail.com':customer.email;
+ if(from.includes('@resend.dev')&&recipient.toLowerCase()!=='midcounty12@gmail.com')return reply({error:'Customer emails need your business email domain verified first. For now, use “Open email app” to send this agreement.',code:'sender_not_ready'},409);
+ const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','Idempotency-Key':'storage-invitation/'+c.setup_token+'/'+recipient},body:JSON.stringify({from,to:[recipient],reply_to:'midcounty12@gmail.com',...email}),signal:AbortSignal.timeout(10000)});
  const outcome=await sent.json().catch(()=>({}));
- if(!sent.ok)return reply({error:sent.status===403?'Branded email sending needs a verified business email domain. Use your email app below for now.':'Email was not sent. Use your email app below or try again.'},502);
- return reply({sent:true,to:customer.email});
+ if(!sent.ok)return reply({error:sent.status===403?'The email provider rejected this sender or recipient. Your business email domain needs checking. Use “Open email app” to send this agreement.':'Email was not sent. Use your email app below or try again.'},502);
+ return reply({sent:true,to:recipient});
  }
  if(action==='refresh')return reply({connection:await refresh(c)});
  if(action==='cancel_setup'){
