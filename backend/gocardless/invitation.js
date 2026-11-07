@@ -1,8 +1,10 @@
+import {arrearsInvitation} from './arrears-invitation.js';
 import {date,ordinal} from './dates.js';
 import {logoAttachment} from './logo.js';
 const site='https://www.pembrokeshireselfstorage.co.uk';
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function invitation({name,container,start,plan,token}){
+ if(plan?.mode==='arrears_monthly_v1')return arrearsInvitation({name,container,plan,token});
  if(!/^[0-9a-f-]{36}$/i.test(token)||!Number.isSafeInteger(plan.amount_pence)||plan.amount_pence<1)throw Error('Invalid invitation details');
  container=container.replace(/\s+[—–].*$/,'');
  const upfront=plan.mode==='upfront_monthly_v1';

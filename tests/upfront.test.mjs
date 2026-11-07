@@ -19,3 +19,16 @@ test('an existing manual subscription blocks a duplicate',async()=>{reset();exis
 test('database failure after provider creation is recovered without another subscription',async()=>{reset();dbFails=true;await assert.rejects(()=>syncMonthly(stored,{db,gc},{}));assert.equal(createCalls.length,1);await syncMonthly(stored,{db,gc},{});assert.equal(createCalls.length,1);assert.equal(stored.subscription_id,'SBTEST');});
 test('cancelled subscription is not restarted',async()=>{reset();sub={id:'SBTEST',status:'cancelled',amount:15600,currency:'GBP',metadata:{billing_request_id:'BRQTEST'}};await syncMonthly(stored,{db,gc},{});assert.equal(stored.subscription_status,'cancelled');assert.equal(createCalls.length,0);});
 test('new terms and emails describe upfront payment; legacy wording remains mandate-only',()=>{reset();const d={customer:'Miles',container:'C11',site:'Haverfordwest',start_date:'2028-01-31',plan:stored.plan};assert(documentText(d).includes('First month payable now: £156.00'));assert(documentText(d).includes('recurring monthly rent'));const e=invitation({name:'Miles',container:'C11',start:d.start_date,plan:d.plan,token:id});assert(e.html.includes('First month payable now'));assert(!e.html.includes('Setting up the mandate does not take a payment'));delete d.plan.mode;assert(!documentText(d).includes('First month payable now:'));});
+test('existing tenant arrears schedule uses agreed first date, no new agreement and no access email',async()=>{
+ reset();signed=false;stored.plan={mode:'arrears_monthly_v1',amount_pence:15600,upfront_amount_pence:31200,arrears_from:'2027-12-17',arrears_until:'2028-02-17',first_date:'2028-02-17',day:17};
+ await syncMonthly(stored,{db,gc},{next_possible_charge_date:'2028-02-10'});
+ assert.equal(createCalls.length,1);assert.equal(sub.amount,15600);assert.equal(sub.start_date,'2028-02-17');assert.equal(sub.day_of_month,17);
+ const {deliverAccess}=await import('../backend/gocardless/access.js');assert.equal(await deliverAccess(stored,{db:async()=>{throw Error('Existing tenant must not need new access')}}),null);
+ const email=invitation({name:'Tony',container:'Container by the garage — Tony Howells',plan:stored.plan,token:id});
+ assert.match(email.text,/£312.00/);assert.match(email.text,/£156.00/);assert.match(email.text,/16th February 2028/);assert(!email.text.includes('Storage starts:'));assert(!email.text.includes('upload'));
+});
+test('existing arrears schedule requires consent, confirmed balance, active mandate, and nonoverlapping periods',async()=>{
+ for(const problem of ['consent','unpaid','mandate','overlap']){reset();stored.plan={mode:'arrears_monthly_v1',amount_pence:15600,upfront_amount_pence:31200,arrears_from:'2027-12-17',arrears_until:'2028-02-17',first_date:'2028-02-17',day:17};
+ if(problem==='consent')stored.terms_accepted_at=null;if(problem==='unpaid')stored.first_payment_status='pending';if(problem==='mandate')stored.mandate_status='pending_submission';if(problem==='overlap')stored.plan.arrears_until='2028-03-17';
+ await syncMonthly(stored,{db,gc},{});assert.equal(createCalls.length,0,problem);}
+});

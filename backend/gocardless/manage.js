@@ -1,6 +1,6 @@
 import {publicAgreement,identityComplete,validateIdentity,saveId,removeId,staffIdUrl,MAX_ID_BYTES} from './identity.js';
 import {deliverAccess} from './access.js';
-import {UPFRONT_MODE,nextMonth} from './billing.js';
+import {UPFRONT_MODE,ARREARS_MODE,automaticPlan,initialAmount,validArrears,nextMonth} from './billing.js';
 import {db,gc,staff,refresh} from './common.js';
 import {version,documentText} from './agreement.js';
 import {invitation} from './invitation.js';
@@ -41,7 +41,7 @@ Deno.serve(async req=>{
  if(input.action==='payment_status'){
  if(!c?.plan)return reply({error:'Setup not found'},404);
  let access=null,accessError=false;try{access=await deliverAccess(c,{db});}catch{accessError=true;}
- return reply({upfront:c.plan.mode===UPFRONT_MODE,first_payment_status:c.first_payment_status||'pending',mandate_status:c.mandate_status||'pending',subscription_status:c.subscription_status||'pending',needs_attention:!!c.billing_error,access_sent:!!access?.sent,access_error:accessError});
+ return reply({upfront:automaticPlan(c.plan),existing_tenant:c.plan.mode===ARREARS_MODE,first_payment_status:c.first_payment_status||'pending',mandate_status:c.mandate_status||'pending',subscription_status:c.subscription_status||'pending',needs_attention:!!c.billing_error,access_sent:!!access?.sent,access_error:accessError});
  }
  if(!c?.plan||!c.setup_url||['cancelled','fulfilled'].includes(c.billing_status))return reply({error:'This setup link is closed. Please ask for a new link.'},410);
  if(c.plan.first_date<=new Date().toISOString().slice(0,10))return reply({error:'The proposed first date has passed. Please ask for a new collection date.'},410);
@@ -76,7 +76,7 @@ Deno.serve(async req=>{
  const {action,tenancy_id,plan}=input;
  if(action==='health'){await gc('creditors?limit=1');return reply({connected:true});}
  if(!/^[0-9a-f-]{36}$/i.test(tenancy_id||''))return reply({error:'Invalid tenancy'},400);
- const t=(await db(`tenancies?id=eq.${tenancy_id}&select=id,status,asset_id,customer_id,start_date`))[0];if(!t)return reply({error:'Tenancy not found'},404);
+ const t=(await db(`tenancies?id=eq.${tenancy_id}&select=id,status,asset_id,customer_id,start_date,monthly_rent_pence,vat_rate`))[0];if(!t)return reply({error:'Tenancy not found'},404);
  let c=(await db(`gocardless_connections?tenancy_id=eq.${tenancy_id}`))[0]||{tenancy_id,billing_status:'not_started'};
  if(action==='agreement_record'){
  const records=await db(`storage_agreements?tenancy_id=eq.${tenancy_id}&order=created_at.desc`);
@@ -119,30 +119,32 @@ Deno.serve(async req=>{
  if(c.billing_status==='cancelled')c={tenancy_id,billing_status:'not_started',billing_request_id:null,mandate_id:null,mandate_status:null,customer_id:null,setup_url:null,plan:null,setup_token:null,terms_accepted_at:null};
  if(c.mandate_id)return reply({connection:c,message:'A mandate is already linked. Check its status before arranging payments.'});
  if(!c.billing_request_id){
- const upfront=plan?.mode===UPFRONT_MODE;
+ const upfront=plan?.mode===UPFRONT_MODE,arrears=plan?.mode===ARREARS_MODE;
+ if(plan?.mode&&!automaticPlan(plan))return reply({error:'Unsupported payment plan.'},400);
+ if(arrears&&(!validArrears(plan)||t.status!=='active'||plan.amount_pence!==Math.round(t.monthly_rent_pence*(1+Number(t.vat_rate||0)/100))))return reply({error:'Check the arrears amount, covered dates and existing monthly rent. The arrears end date must equal the first monthly collection date (exclusive).'},400);
  const maxDay=upfront?31:28;
  if(!plan||!Number.isSafeInteger(plan.amount_pence)||plan.amount_pence<1||plan.amount_pence>1000000||!/^\d{4}-\d{2}-\d{2}$/.test(plan.first_date||'')||!Number.isInteger(plan.day)||plan.day<1||plan.day>maxDay||new Date(plan.first_date+'T12:00:00Z').toISOString().slice(0,10)!==plan.first_date||plan.first_date<=new Date(Date.now()+7*86400000).toISOString().slice(0,10))return reply({error:'Enter a valid monthly amount and collection date at least 8 days ahead.'},400);
- if(upfront){
- if(t.start_date<new Date().toISOString().slice(0,10)||plan.first_date!==nextMonth(t.start_date)||plan.day!==Number(t.start_date.slice(-2)))return reply({error:'The first monthly Direct Debit must start one calendar month after storage starts.'},400);
+ if(upfront||arrears){
+ if(upfront&&(t.start_date<new Date().toISOString().slice(0,10)||plan.first_date!==nextMonth(t.start_date)||plan.day!==Number(t.start_date.slice(-2))))return reply({error:'The first monthly Direct Debit must start one calendar month after storage starts.'},400);
  const asset=(await db(`assets?id=eq.${t.asset_id}&select=asset_type`))[0];
  if(asset?.asset_type!=='container')return reply({error:'Upfront storage payments are only supported for containers.'},400);
  const creditors=(await gc('creditors?limit=2')).creditors;
  if(creditors?.length!==1||!creditors[0].scheme_identifiers?.some(x=>x.scheme==='faster_payments'&&x.status==='active'))return reply({error:'Pay by Bank is not enabled. No payment request was created.'},409);
  }else if(Number(plan.first_date.slice(-2))!==plan.day)return reply({error:'Collection date and day must match.'},400);
- c.plan={amount_pence:plan.amount_pence,first_date:plan.first_date,day:plan.day,currency:'GBP',frequency:'monthly',...(upfront?{mode:UPFRONT_MODE,storage_start:t.start_date,upfront_amount_pence:plan.amount_pence}:{})};
+ c.plan={amount_pence:plan.amount_pence,first_date:plan.first_date,day:plan.day,currency:'GBP',frequency:'monthly',...(upfront?{mode:UPFRONT_MODE,storage_start:t.start_date,upfront_amount_pence:plan.amount_pence}:arrears?{mode:ARREARS_MODE,upfront_amount_pence:plan.upfront_amount_pence,arrears_from:plan.arrears_from,arrears_until:plan.arrears_until}:{})};
  c.setup_token=crypto.randomUUID();c.terms_accepted_at=null;
  // Terms are fixed for this request; a replacement requires cancelling the old request first.
  // Only the new explicit upfront plan requests payment; legacy links remain mandate-only.
- let b=await gc('billing_requests','POST',{billing_requests:{mandate_request:{scheme:'bacs'},...(upfront?{fallback_enabled:false,payment_request:{amount:plan.amount_pence,currency:'GBP',scheme:'faster_payments',description:'First month — Pembrokeshire Self Storage'}}:{}),metadata:{tenancy_id}}},(upfront?'storage-upfront-v1-':'tenancy-mandate-v2-')+tenancy_id+'-'+plan.first_date+'-'+plan.amount_pence+'-'+previousRequest);
+ let b=await gc('billing_requests','POST',{billing_requests:{mandate_request:{scheme:'bacs'},...(upfront||arrears?{fallback_enabled:false,payment_request:{amount:initialAmount(c.plan),currency:'GBP',scheme:'faster_payments',description:arrears?'Outstanding rent — Pembrokeshire Self Storage':'First month — Pembrokeshire Self Storage'}}:{}),metadata:{tenancy_id}}},(arrears?'storage-arrears-v1-'+plan.upfront_amount_pence+'-'+plan.arrears_from+'-':upfront?'storage-upfront-v1-':'tenancy-mandate-v2-')+tenancy_id+'-'+plan.first_date+'-'+plan.amount_pence+'-'+previousRequest);
  if(b.conflict)b=await gc('billing_requests/'+encodeURIComponent(b.conflict));
  c.billing_request_id=b.billing_requests.id;c.billing_status=b.billing_requests.status;
  await db('gocardless_connections?on_conflict=tenancy_id','POST',c);
  }
- if(c.plan?.mode===UPFRONT_MODE)await db(`tenancies?id=eq.${tenancy_id}`,'PATCH',{payment_day:c.plan.day});
+ if(automaticPlan(c.plan))await db(`tenancies?id=eq.${tenancy_id}`,'PATCH',{payment_day:c.plan.day});
  if(!c.plan)return reply({error:'This is an old mandate-only link. Cancel the pending setup below, then create a link with payment terms.'},409);
  if(['cancelled','fulfilled'].includes(c.billing_status))return reply({error:'This setup request is closed. Review it in GoCardless before creating another.'},409);
  const asset=(await db(`assets?id=eq.${t.asset_id}&select=asset_type,name,location`))[0];
- if(asset?.asset_type==='container'){
+ if(asset?.asset_type==='container'&&c.plan.mode!==ARREARS_MODE){
  let agreement=(await db(`storage_agreements?setup_token=eq.${c.setup_token}`))[0];
  if(!agreement){
  if(input.agreement_confirmed!==true)return reply({error:'Check and confirm the container and storage start date before creating the agreement link.'},400);
