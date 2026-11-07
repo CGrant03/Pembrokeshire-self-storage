@@ -147,7 +147,7 @@ Deno.serve(async req=>{
  if(!agreement){
  if(input.agreement_confirmed!==true)return reply({error:'Check and confirm the container and storage start date before creating the agreement link.'},400);
  const customer=(await db(`customers?id=eq.${t.customer_id}&select=full_name`))[0];
- const document=documentText({customer:customer.full_name,container:asset.name.replace(/\s+[—–].*$/,''),site:asset.location||'Cartlett Office & Storage Park, Haverfordwest',start_date:t.start_date,plan:c.plan});
+ const document=documentText({customer:customer.full_name,container:asset.name.replace(/\s+[—–].*$/,''),site:asset.location||'Cartlett Office & Storage Park, Haverfordwest, SA61 2LH',start_date:t.start_date,plan:c.plan});
  const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(document));
  await db('storage_agreements','POST',{tenancy_id:t.id,setup_token:c.setup_token,version,document,document_hash:Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('')});
  }
