@@ -33,7 +33,7 @@ Deno.serve(async req=>{
  while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>maxBody){await reader.cancel();return reply({error:'Request too large'},413);}chunks.push(value);}
  const body=new Blob(chunks,{type:req.headers.get('content-type')||'application/json'});
  let input,idFile;
- if(multipart){const form=await new Response(body).formData();input=JSON.parse(String(form.get('payload')||'{}'));idFile=form.get('identification');if(input.action!=='sign_agreement')return reply({error:'Invalid upload request'},400);}
+ if(multipart){const form=await new Response(body,{headers:{'Content-Type':req.headers.get('content-type')}}).formData();input=JSON.parse(String(form.get('payload')||'{}'));idFile=form.get('identification');if(input.action!=='sign_agreement')return reply({error:'Invalid upload request'},400);}
  else input=JSON.parse(await body.text());
  if(['terms','accept_terms','sign_agreement','payment_status'].includes(input.action)){
  if(!/^[a-f0-9-]{36}$/i.test(input.token||''))return reply({error:'Invalid setup link'},404);
@@ -97,7 +97,7 @@ Deno.serve(async req=>{
  const testRecipient=/^TEST\b/i.test(customer.full_name||'')&&/^midcounty12\+[^@]+@gmail\.com$/i.test(customer.email);
  const recipient=testRecipient?'midcounty12@gmail.com':customer.email;
  if(from.includes('@resend.dev')&&recipient.toLowerCase()!=='midcounty12@gmail.com')return reply({error:'Customer emails need your business email domain verified first. For now, use “Open email app” to send this agreement.',code:'sender_not_ready'},409);
- const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','Idempotency-Key':'storage-invitation-v2/'+c.setup_token+'/'+recipient},body:JSON.stringify({from,to:[recipient],reply_to:'midcounty12@gmail.com',...email}),signal:AbortSignal.timeout(10000)});
+ const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','Idempotency-Key':'storage-invitation-v3/'+c.setup_token+'/'+recipient},body:JSON.stringify({from,to:[recipient],reply_to:'midcounty12@gmail.com',...email}),signal:AbortSignal.timeout(10000)});
  const outcome=await sent.json().catch(()=>({}));
  if(!sent.ok)return reply({error:sent.status===403?'The email provider rejected this sender or recipient. Your business email domain needs checking. Use “Open email app” to send this agreement.':'Email was not sent. Use your email app below or try again.'},502);
  return reply({sent:true,to:recipient});
