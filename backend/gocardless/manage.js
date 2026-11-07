@@ -1,5 +1,6 @@
 import {db,gc,staff,refresh} from './common.js';
 import {version,documentText} from './agreement.js';
+import {invitation} from './invitation.js';
 const site='https://www.pembrokeshireselfstorage.co.uk';
 const allowedOrigins=new Set([site,'https://pembrokeshireselfstorage.co.uk','https://cgrant03.github.io']);
 const baseHeaders={'Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info','Access-Control-Allow-Methods':'POST,OPTIONS','Content-Type':'application/json'};
@@ -43,6 +44,21 @@ Deno.serve(async req=>{
  if(!/^[0-9a-f-]{36}$/i.test(tenancy_id||''))return reply({error:'Invalid tenancy'},400);
  const t=(await db(`tenancies?id=eq.${tenancy_id}&select=id,status,asset_id,customer_id,start_date`))[0];if(!t)return reply({error:'Tenancy not found'},404);
  let c=(await db(`gocardless_connections?tenancy_id=eq.${tenancy_id}`))[0]||{tenancy_id,billing_status:'not_started'};
+ if(action==='email_invitation'){
+ if(!c.setup_token||!c.setup_url||!c.plan||['cancelled','fulfilled'].includes(c.billing_status)||c.mandate_id)return reply({error:'This setup link is closed. Check the tenant status before sending.'},409);
+ if(c.plan.first_date<=new Date().toISOString().slice(0,10))return reply({error:'The collection date has passed. Prepare a new link first.'},409);
+ const customer=(await db(`customers?id=eq.${t.customer_id}&select=full_name,email`))[0];
+ const asset=(await db(`assets?id=eq.${t.asset_id}&select=name`))[0];
+ if(!customer?.email||!asset)return reply({error:'Save a customer email address before sending.'},400);
+ const key=Deno.env.get('RESEND_API_KEY');
+ if(!key)return reply({error:'Email sending is unavailable. Use your email app below.'},503);
+ const email=invitation({name:customer.full_name,container:asset.name,start:t.start_date,plan:c.plan,token:c.setup_token});
+ const from=Deno.env.get('STORAGE_EMAIL_FROM')||'Pembrokeshire Self Storage <onboarding@resend.dev>';
+ const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','Idempotency-Key':'storage-invitation/'+c.setup_token},body:JSON.stringify({from,to:[customer.email],reply_to:'midcounty12@gmail.com',...email}),signal:AbortSignal.timeout(10000)});
+ const outcome=await sent.json().catch(()=>({}));
+ if(!sent.ok)return reply({error:sent.status===403?'Branded email sending needs a verified business email domain. Use your email app below for now.':'Email was not sent. Use your email app below or try again.'},502);
+ return reply({sent:true,to:customer.email});
+ }
  if(action==='refresh')return reply({connection:await refresh(c)});
  if(action==='cancel_setup'){
  if(!c.billing_request_id)return reply({message:'No setup to cancel.'});
