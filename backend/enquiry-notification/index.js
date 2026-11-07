@@ -40,7 +40,7 @@ Deno.serve(async(req)=>{
  'Google Maps directions: '+'https://www.google.com/maps/dir/?api=1&destination=Pembrokeshire%20Self%20Storage%2C%20Cartlett%20Office%20%26%20Storage%20Park%2C%20Haverfordwest%2C%20Pembrokeshire%2C%20SA61%202LH'
  ].join('\n');
  const html='<div style="font-family:Arial,sans-serif;color:#172b36;max-width:560px;padding:20px">'
- +'<img src="cid:storage-logo" width="210" alt="Pembrokeshire Self Storage"><h2>New storage enquiry</h2>'
+ +'<a href="https://www.pembrokeshireselfstorage.co.uk/" aria-label="Pembrokeshire Self Storage homepage" style="display:inline-block;text-decoration:none"><img src="cid:storage-logo" width="210" alt="Pembrokeshire Self Storage"></a><h2>New storage enquiry</h2>'
  +'<p style="margin:20px 0"><a href="'+dashboard+'" style="background:#172b36;color:#ffffff;padding:16px 24px;text-decoration:none;border-radius:6px;display:inline-block;font-weight:bold">Open dashboard</a></p>'
  +'<p style="font-size:15px;line-height:1.5;overflow-wrap:anywhere">Dashboard link:<br><a href="'+dashboard+'">'+dashboard+'</a></p>'
  +'<p style="font-size:14px;color:#526574">Sign in if asked, then open New enquiries.</p>'
