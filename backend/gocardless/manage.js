@@ -97,10 +97,14 @@ Deno.serve(async req=>{
  const testRecipient=/^TEST\b/i.test(customer.full_name||'')&&/^midcounty12\+[^@]+@gmail\.com$/i.test(customer.email);
  const recipient=testRecipient?'midcounty12@gmail.com':customer.email;
  if(from.includes('@resend.dev')&&recipient.toLowerCase()!=='midcounty12@gmail.com')return reply({error:'Customer emails need your business email domain verified first. For now, use “Open email app” to send this agreement.',code:'sender_not_ready'},409);
- const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','Idempotency-Key':'storage-invitation-v3/'+c.setup_token+'/'+recipient},body:JSON.stringify({from,to:[recipient],reply_to:'midcounty12@gmail.com',...email}),signal:AbortSignal.timeout(10000)});
+ // Deduplicate retries of one send, not every invitation for the same tenancy.
+ const requestId=input.email_request_id||crypto.randomUUID();
+ if(!/^[a-f0-9-]{36}$/i.test(requestId))return reply({error:'Invalid email request'},400);
+ const sent=await fetch('https://api.resend.com/emails',{method:'POST',headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','Idempotency-Key':'storage-invitation-v4/'+c.setup_token+'/'+requestId},body:JSON.stringify({from,to:[recipient],reply_to:'midcounty12@gmail.com',...email}),signal:AbortSignal.timeout(10000)});
  const outcome=await sent.json().catch(()=>({}));
  if(!sent.ok)return reply({error:sent.status===403?'The email provider rejected this sender or recipient. Your business email domain needs checking. Use “Open email app” to send this agreement.':'Email was not sent. Use your email app below or try again.'},502);
- return reply({sent:true,to:recipient});
+ console.info(JSON.stringify({event:'storage_invitation_accepted',tenancy_id,email_id:outcome.id,request_id:requestId}));
+ return reply({sent:true,to:recipient,email_id:outcome.id});
  }
  if(action==='refresh')return reply({connection:await refresh(c)});
  if(action==='cancel_setup'){

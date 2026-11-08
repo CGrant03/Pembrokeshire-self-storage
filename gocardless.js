@@ -2,7 +2,8 @@
 'use strict';
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let panel,busy=false;
-async function call(action,tenancy_id,plan){const {data,error}=await db.functions.invoke('gocardless-manage',{body:{action,tenancy_id,plan,agreement_confirmed:action==='setup'}});if(error){let detail;try{detail=await error.context.json()}catch{}throw new Error(detail?.error||error.message);}if(data?.error)throw new Error(data.error);return data;}
+const emailRequests=new Map();
+async function call(action,tenancy_id,plan){if(action==='email_invitation'&&!emailRequests.has(tenancy_id))emailRequests.set(tenancy_id,crypto.randomUUID());const {data,error}=await db.functions.invoke('gocardless-manage',{body:{action,tenancy_id,plan,email_request_id:action==='email_invitation'?emailRequests.get(tenancy_id):undefined,agreement_confirmed:action==='setup'}});if(error){let detail;try{detail=await error.context.json()}catch{}throw new Error(detail?.error||error.message);}if(data?.error)throw new Error(data.error);if(data?.sent)emailRequests.delete(tenancy_id);return data;}
 async function load(){
  if(busy)return;busy=true;
  try{
