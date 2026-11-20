@@ -19,7 +19,9 @@ window.loadStorageEnquiries=async function(){
  for(const e of enquiries){
   const t=tenancies.find(t=>t.id===e.tenancy_id),c=connections.find(c=>c.tenancy_id===e.tenancy_id),agreement=agreements.find(a=>a.tenancy_id===e.tenancy_id);
   const card=document.createElement('article');card.className='mg-edit';
+  const origin=document.createElement('p');origin.className='muted';origin.textContent='Enquiry source: '+(e.enquiry_source==='google_ads'?'Google search advert':e.enquiry_source==='other'?'Website / other':'Not recorded (older enquiry)');
   card.innerHTML='<h3>'+esc(e.full_name)+'</h3><p>'+esc(e.contact)+(e.phone&&e.contact!==e.phone?' · '+esc(e.phone):'')+'</p><p>'+esc(e.requirements)+'</p><p>'+esc(e.tenancy_id?(agreement?.signed_at?'Agreement signed':'Awaiting agreement')+' · '+(c?.mandate_status?'Direct Debit: '+c.mandate_status:'Bank setup pending'):'New enquiry')+'</p>';
+  card.append(origin);
   if(c?.plan?.mode==='upfront_monthly_v1'){
    const paid=['confirmed','paid_out'].includes(c.first_payment_status);
    const state=document.createElement('p');state.textContent=(paid?'First month payment confirmed':'First month: '+(c.first_payment_status||'awaiting payment'))+' · Monthly Direct Debit: '+(c.subscription_status||'waiting for payment and bank setup');card.append(state);
