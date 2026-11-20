@@ -143,6 +143,19 @@
       if (button) edit(state.rows.find(row => row.id === button.dataset.edit));
     });
     // The existing dashboard decides who can see #app; Supabase RLS checks permissions again for every query.
+    // Open automatically after staff sign-in, including for the direct callbacks link.
+    const openForStaff = () => {
+      if (app.style.display !== 'block') return;
+      if (panel.hidden) {
+        panel.hidden = false;
+        openButton.setAttribute('aria-expanded', 'true');
+        openButton.textContent = 'Hide callbacks & waiting list';
+      }
+      if (!state.loaded && !state.busy) load();
+    };
+    const appObserver = new MutationObserver(openForStaff);
+    appObserver.observe(app, { attributes: true, attributeFilter: ['style'] });
+    openForStaff();
     db.auth.onAuthStateChange(event => {
       if (event === 'SIGNED_OUT') {
         state.rows = []; state.loaded = false; state.editing = null;
@@ -158,6 +171,7 @@
     if (!panel) return;
     panel.hidden = !open;
     el('cbOpen').setAttribute('aria-expanded', String(open));
+    el('cbOpen').textContent = open ? 'Hide callbacks & waiting list' : 'Open callbacks & waiting list';
     if (open && !state.loaded) await load();
     if (open) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -178,6 +192,9 @@
       state.loaded = true;
       notify('');
       render();
+      if (new URLSearchParams(location.search).get('callbacks') === '1') {
+        requestAnimationFrame(() => el('cbPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+      }
     } catch (err) {
       state.loaded = false;
       notify('Could not load callbacks: ' + (err.message || String(err)), true);
