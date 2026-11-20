@@ -36,6 +36,12 @@
 
     const css = document.createElement('style');
     css.textContent = `
+      .cb-page-header{flex-wrap:wrap}
+      .cb-shortcut{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-left:5px solid #e9bb58;margin-top:18px}
+      .cb-shortcut h2{margin:0 0 7px;font-size:23px}
+      .cb-shortcut p{margin:0;line-height:1.5}
+      .cb-shortcut .btn{min-height:48px;font-size:16px}
+      @media(max-width:650px){.cb-page-header>div{width:100%}.cb-page-header>div:last-child{justify-content:flex-start!important}.cb-shortcut .btn{width:100%}}
       .cb-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:16px 0}
       .cb-panel{border-top:4px solid #e9bb58}
       .cb-panel h2{margin:0 0 6px}
@@ -74,7 +80,14 @@
     openButton.textContent = 'Callbacks';
     openButton.setAttribute('aria-controls', 'cbPanel');
     openButton.setAttribute('aria-expanded', 'false');
-    toolbar.insertBefore(openButton, toolbar.firstChild);
+    app.firstElementChild.classList.add('cb-page-header');
+    openButton.textContent = 'Open callbacks & waiting list';
+    const shortcut = document.createElement('section');
+    shortcut.className = 'card cb-shortcut';
+    const introduction = document.createElement('div');
+    introduction.innerHTML = '<h2>Callbacks &amp; waiting list</h2><p class="muted">Save phone calls, follow-up dates and waiting-list enquiries here.</p>';
+    shortcut.append(introduction, openButton);
+    stats.before(shortcut);
 
     const panel = document.createElement('section');
     panel.id = 'cbPanel';
